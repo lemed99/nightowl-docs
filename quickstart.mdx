@@ -1,0 +1,68 @@
+---
+title: Quick Start
+description: Get NightOwl running in 5 minutes.
+---
+
+## 1. Sign up and create your app
+
+Create your NightOwl account at [usenightowl.com/signup](https://usenightowl.com/signup), add your application, and connect your PostgreSQL database. You'll get an agent token to authenticate your instance.
+
+## 2. Install the packages
+
+Add Laravel Nightwatch (if you haven't already) and the NightOwl agent to your Laravel app:
+
+```bash
+composer require laravel/nightwatch nightowl/agent
+```
+
+## 3. Configure environment variables
+
+Add these to your `.env` file:
+
+```env
+NIGHTWATCH_TOKEN=your-agent-token
+NIGHTOWL_DB_HOST=your-pg-host
+NIGHTOWL_DB_PORT=5432
+NIGHTOWL_DB_DATABASE=nightowl
+NIGHTOWL_DB_USERNAME=nightowl
+NIGHTOWL_DB_PASSWORD=your-password
+```
+
+<Note>
+  `NIGHTWATCH_TOKEN` is the token you copy from the NightOwl dashboard — the Laravel Nightwatch package reads it to authenticate outgoing telemetry, and the NightOwl agent uses it to authenticate inbound payloads. For a standalone NightOwl setup this is the only token you need.
+
+  `NIGHTOWL_TOKEN` is a *separate* variable used only when you're running NightOwl [alongside Nightwatch's hosted agent](/agent/migration-from-nightwatch) and need to distinguish the two tokens. Don't set it for a standard install.
+</Note>
+
+## 4. Run the agent
+
+```bash
+php artisan nightowl:agent
+```
+
+The agent starts on port 2407 by default. Nightwatch will automatically send telemetry to it.
+
+## 5. Open the dashboard
+
+Go to [usenightowl.com](https://usenightowl.com) and select your app. You should see data flowing in within seconds.
+
+<Note>
+  The agent creates all required database tables automatically on first run. No manual migrations needed.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Full agent documentation" icon="github" href="https://github.com/lemed99/nightowl-agent#readme">
+    Every environment variable, sampling, redaction, supervisord/systemd recipes, and testing setup.
+  </Card>
+  <Card title="Health monitoring" icon="heart-pulse" href="/agent/health-monitoring">
+    Read ingest rate, drain rate, and buffer depth — and know when to scale.
+  </Card>
+  <Card title="Alert channels" icon="bell" href="/dashboard/alert-channels">
+    Wire Slack, Discord, email, or webhooks for new-issue notifications.
+  </Card>
+  <Card title="MCP server" icon="plug" href="/dashboard/mcp-server">
+    Let Claude Code, Codex, or Cursor browse and update issues from your editor.
+  </Card>
+</CardGroup>

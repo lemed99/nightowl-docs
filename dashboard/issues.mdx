@@ -1,0 +1,71 @@
+---
+title: "Issues"
+description: "Manage exception and performance issues with status tracking and bulk actions."
+---
+
+Issues are NightOwl's triage surface. Every unhandled exception and every slow request gets grouped by fingerprint so you see one row per *problem*, not one row per occurrence. From there you assign, prioritize, discuss, and resolve — the same workflow regardless of whether the issue started as a stack trace or a p95 regression.
+
+## The two issue types
+
+<CardGroup cols={2}>
+  <Card title="Exception issues" icon="bug">
+    Grouped by stack-trace fingerprint. One issue covers every occurrence of the same bug across every request, job, or command that hit it.
+  </Card>
+  <Card title="Performance issues" icon="gauge">
+    Opened automatically when a route's p95 duration crosses the threshold you configure in **Settings → Thresholds**. Closed automatically when it recovers.
+  </Card>
+</CardGroup>
+
+Switch between tabs at the top of the Issues page. Filters, bulk actions, and status pills apply to the active tab.
+
+## Status model
+
+An issue is always in one of three states:
+
+| Status      | Meaning                                                                |
+| ----------- | ---------------------------------------------------------------------- |
+| `open`      | Active. Alerts fire and the issue appears in the default list.         |
+| `resolved`  | Fixed. Silenced until the fingerprint reoccurs after the resolve time. |
+| `ignored`   | Noise. Silenced indefinitely — won't reopen automatically.             |
+
+Use **Resolve** for bugs you've deployed a fix for. Use **Ignore** for issues you've deliberately decided not to chase (third-party noise, known false positives, deprecated endpoints).
+
+## Triage workflow
+
+1. **Filter down** — status pills (Open / Resolved / Ignored / All), environment dropdown, assignee dropdown, and free-text search stack across each other.
+2. **Pick by priority** — the priority column is sortable. Critical first, then high.
+3. **Open the detail view** — click a row. The right-hand *Manage* sidebar has status, priority, assignee, and description; the main pane shows the latest stack trace, occurrence sparkline, affected users, environments, and a combined comments + activity timeline.
+4. **Resolve with context** — post a comment and tick **Resolve on comment** in one action. The comment, the status flip, and the alert fan-out all happen together.
+
+## Bulk actions
+
+Tick the checkbox on multiple rows to reveal the bulk toolbar. Available actions:
+
+- Resolve selected
+- Ignore selected
+- Reopen selected
+- Assign selected (to a teammate)
+
+Useful when you ship a fix that knocks out a cluster of related exceptions, or when you want to sweep stale issues before a release.
+
+## Assignments and comments
+
+- **Assignee** — any team member on the app. Assigning an issue notifies the assignee through the configured [alert channels](/dashboard/alert-channels) (if they have email configured).
+- **Comments** — markdown supported. Use them to document the investigation, link to PRs, or record why something was ignored.
+- **Activity timeline** — every status change, priority bump, assignment, comment, and description edit appears in the timeline. Entries from the [MCP server](/dashboard/mcp-server) are visually distinct so AI-driven edits stay auditable.
+
+## Alerts
+
+When an issue transitions to `open` — either because it's brand new or because a resolved issue reoccurred — every enabled [alert channel](/dashboard/alert-channels) fires once. NightOwl does *not* re-alert on every occurrence; only on status changes. That keeps Slack quiet during incident storms.
+
+Reopening a resolved issue because of a new occurrence requires the fingerprint to land *after* the resolve timestamp. This protects against late-arriving telemetry flipping a freshly-resolved issue back to open.
+
+## Auto-resolve stale issues
+
+In **Settings → Issues** you can set an auto-resolve window (default: disabled). Any `open` issue with no new occurrences for that many days is resolved automatically by the `nightowl:auto-resolve-issues` artisan command, scheduled via Laravel's scheduler in each app.
+
+This keeps long-running projects from accumulating a graveyard of open-but-forgotten issues. The activity timeline still shows exactly when and why the auto-resolve happened.
+
+## API and automation
+
+Every action in the UI — status change, priority edit, comment, bulk update — has a direct API equivalent under `/api/data/{app}/issues`. AI assistants can do the same through the [MCP server](/dashboard/mcp-server), which wraps those endpoints with auditable tokens and a fixed tool surface.

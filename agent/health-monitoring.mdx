@@ -1,0 +1,58 @@
+---
+title: "Health Monitoring"
+description: "Monitor the health status of your NightOwl agent and connected applications."
+---
+
+The NightOwl health dashboard gives you real-time visibility into the agent process that sits between your application and your PostgreSQL database. Use it to confirm that telemetry is flowing, to diagnose back-pressure before it becomes data loss, and to decide when to scale horizontally.
+
+## Where to find it
+
+In the dashboard, open your app and click **Health** in the sidebar. The page polls every 10 seconds while open and reads directly from the agent's metrics SQLite file — no extra round-trip to PostgreSQL.
+
+## The three signals that matter
+
+<CardGroup cols={3}>
+  <Card title="Ingest rate" icon="download">
+    Payloads accepted per second over the last minute. On a single instance a healthy agent ingests up to ~13,400 payloads/s.
+  </Card>
+  <Card title="Drain rate" icon="upload">
+    Rows written to PostgreSQL per second. Drain should keep pace with ingest; a persistent gap means the buffer is filling.
+  </Card>
+  <Card title="Buffer depth" icon="database">
+    Pending rows sitting in the SQLite WAL buffer. Grows when drain lags ingest; the agent rejects new payloads once it hits 100,000.
+  </Card>
+</CardGroup>
+
+## Reading the charts
+
+- **Ingest vs. drain** — the two lines should track each other. If drain flattens while ingest keeps climbing, PostgreSQL is the bottleneck (check the `postgresql-sizing` guide).
+- **Buffer depth** — a steady sawtooth is normal: ingest fills, drain empties in 5,000-row batches. A monotonically rising line is the early warning for back-pressure.
+- **Drain batch latency** — time to `COPY` one batch. Sustained values above a second usually mean PostgreSQL is IO-bound or connection-starved.
+
+## Status banners
+
+<AccordionGroup>
+  <Accordion title="Agent offline">
+    The health file hasn't been touched in the last 30 seconds. The agent process likely crashed or was never started. Check `supervisord` / systemd logs for the `nightowl:agent` worker.
+  </Accordion>
+  <Accordion title="Buffer near capacity">
+    Buffer depth is above 80,000 rows. Ingest will start rejecting payloads at 100,000. Scale drain workers (see `NIGHTOWL_DRAIN_WORKERS`) or add a PostgreSQL replica.
+  </Accordion>
+  <Accordion title="Drain stalled">
+    Drain rate has been zero for longer than one minute while ingest is non-zero. Almost always a PostgreSQL connection issue — verify credentials, PgBouncer, and `max_connections`.
+  </Accordion>
+  <Accordion title="No recent payloads">
+    Ingest rate has been zero for 5+ minutes. Your application may not be sending. Confirm `NIGHTWATCH_TOKEN` is set to the token from the NightOwl dashboard and that the Nightwatch package is installed and booted.
+  </Accordion>
+</AccordionGroup>
+
+## What to do when it's unhealthy
+
+1. **Persistent drain lag** → increase drain workers: `NIGHTOWL_DRAIN_WORKERS=4` (one worker per PostgreSQL core is a reasonable ceiling).
+2. **Connection churn** → put PgBouncer in front of PostgreSQL. The bundled `docker-compose.yml` ships a ready configuration on port 6432.
+3. **Single-instance ceiling** → run multiple agent instances behind `SO_REUSEPORT`. See [Multiple Instances](/agent/multiple-instances).
+4. **PostgreSQL saturation** → check `pg_stat_activity`, tune `synchronous_commit = off`, or upgrade disk. See [PostgreSQL sizing](/performance/postgresql-sizing).
+
+## Raw metrics for external monitoring
+
+The agent also writes a JSON metrics file at `storage/nightowl/agent-buffer.sqlite.drain-metrics.json`. Point Prometheus, Datadog, or a cron-scraped shell script at it if you want alerts that live outside the dashboard.

@@ -1,0 +1,95 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "NightOwl",
+  "colors": {
+    "primary": "#34d399",
+    "light": "#6ee7b7",
+    "dark": "#059669"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "anchors": [
+      {
+        "anchor": "Documentation",
+        "icon": "book-open",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Agent",
+            "pages": [
+              "agent/migration-from-nightwatch",
+              "agent/multiple-instances",
+              "agent/health-monitoring"
+            ]
+          },
+          {
+            "group": "NightOwl Features",
+            "pages": [
+              "dashboard/issues",
+              "dashboard/alert-channels",
+              "dashboard/smtp-setup",
+              "dashboard/mcp-server",
+              "dashboard/data-management"
+            ]
+          },
+          {
+            "group": "Performance",
+            "pages": [
+              "performance/throughput",
+              "performance/postgresql-sizing"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "Agent README",
+          "href": "https://github.com/lemed99/nightowl-agent#readme",
+          "icon": "book"
+        },
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/lemed99/nightowl-agent",
+          "icon": "github"
+        }
+      ]
+    }
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "background": {
+    "color": {
+      "light": "#ffffff",
+      "dark": "#0f0f0f"
+    }
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Dashboard",
+        "href": "https://usenightowl.com/login"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get Started",
+      "href": "https://usenightowl.com/signup"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/lemed99/nightowl-agent"
+    }
+  }
+}

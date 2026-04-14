@@ -1,0 +1,159 @@
+---
+title: "SMTP Setup"
+description: "Configure your own SMTP credentials for Email alert channels — Gmail, SendGrid, Postmark, AWS SES, and Mailgun."
+---
+
+NightOwl's Email alert channel is bring-your-own-SMTP: we never send mail from a shared pool, so alerts arrive with your domain and your deliverability. This page walks you through configuring SMTP for the common providers, with Gmail as the reference example.
+
+## Where to configure it
+
+In the dashboard, open your app and go to **Settings → Alert Channels → New Channel → Email**. You'll need six fields:
+
+| Field       | Notes                                                                 |
+| ----------- | --------------------------------------------------------------------- |
+| Host        | Provider's SMTP hostname.                                             |
+| Port        | 465 for SSL, 587 for TLS, 25 for unauthenticated (rarely used today). |
+| Username    | Usually your full email address or an API-key username.               |
+| Password    | SMTP password or app-specific password. Encrypted at rest.            |
+| Encryption  | `tls` (STARTTLS on 587) or `ssl` (SMTPS on 465).                      |
+| From address| The `From:` header on the alert email. Must be an address the provider lets you send as. |
+
+After saving, use **Send test** to fire a synthetic alert. A successful test confirms the credentials and DNS/SPF/DKIM setup work end-to-end.
+
+## Gmail (personal or Google Workspace)
+
+Gmail is the most common request, and also the trickiest because Google disabled basic password auth in 2022. You need an **App Password**, not your regular Google password.
+
+### 1. Enable 2-Step Verification
+
+App Passwords require 2-Step Verification on the Google account.
+
+1. Go to [myaccount.google.com/security](https://myaccount.google.com/security).
+2. Under **How you sign in to Google**, enable **2-Step Verification** if it's not already on.
+
+### 2. Generate an App Password
+
+1. Visit [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
+2. Name it something identifiable — e.g. *"NightOwl alerts"*.
+3. Click **Create**. Google shows a 16-character password once. Copy it immediately; it won't be shown again.
+
+<Note>
+  If the App Passwords page is missing, your account doesn't have 2-Step Verification enabled, or your Workspace admin has disabled the feature. Ask your admin to allow App Passwords, or use a relay like SendGrid / SES instead.
+</Note>
+
+### 3. Fill in the NightOwl form
+
+```
+Host:        smtp.gmail.com
+Port:        587
+Username:    your-address@gmail.com
+Password:    <16-character App Password, no spaces>
+Encryption:  tls
+From:        your-address@gmail.com
+```
+
+Gmail also accepts port `465` with `ssl` — both work. Use whichever your firewall allows.
+
+### 4. Send a test
+
+Click **Send test** in the dashboard. The email should land within a few seconds. If it doesn't:
+
+- **Check spam.** First-time senders to a recipient often land there.
+- **Check the error banner.** NightOwl surfaces the SMTP error verbatim — `535 Username and Password not accepted` means the App Password is wrong or was mistyped with spaces.
+- **Sending limits.** Gmail caps outbound at ~500 recipients/day for personal accounts and ~2,000/day for Workspace. For teams with chatty alerts, switch to SendGrid or SES.
+
+### Workspace with a custom domain
+
+If your Gmail account is `you@yourcompany.com` on Google Workspace, the config is identical — still `smtp.gmail.com:587` with an App Password. The `From:` address just becomes `you@yourcompany.com`. Workspace admins can also set up [SMTP relay](https://support.google.com/a/answer/2956491) on `smtp-relay.gmail.com` for higher volume, which avoids per-user App Passwords.
+
+## Other common providers
+
+### SendGrid
+
+```
+Host:        smtp.sendgrid.net
+Port:        587
+Username:    apikey             # literal string
+Password:    <SendGrid API key>
+Encryption:  tls
+From:        alerts@yourdomain.com
+```
+
+Create the API key under **Settings → API Keys → Create API Key** with *Mail Send → Full Access*. The username is literally the word `apikey`.
+
+### Postmark
+
+```
+Host:        smtp.postmarkapp.com
+Port:        587
+Username:    <server token>
+Password:    <server token>     # same value in both fields
+Encryption:  tls
+From:        alerts@yourdomain.com
+```
+
+Postmark uses the same server token for both username and password. Grab it from **Servers → your server → API Tokens**.
+
+### Amazon SES
+
+```
+Host:        email-smtp.us-east-1.amazonaws.com   # adjust region
+Port:        587
+Username:    <SMTP username from IAM>
+Password:    <SMTP password from IAM>
+Encryption:  tls
+From:        alerts@yourdomain.com                # must be a verified identity
+```
+
+SES has its own *SMTP credentials* that are different from your IAM access key. Generate them under **SES Console → SMTP Settings → Create SMTP credentials**. Before you can send from an address, the domain (or the individual email) must be verified in SES, and the account must be out of the SES sandbox for arbitrary recipients.
+
+### Mailgun
+
+```
+Host:        smtp.mailgun.org           # or smtp.eu.mailgun.org for EU region
+Port:        587
+Username:    postmaster@mg.yourdomain.com
+Password:    <Mailgun SMTP password>
+Encryption:  tls
+From:        alerts@yourdomain.com
+```
+
+Find the SMTP credentials under **Sending → Domain settings → SMTP credentials** for the domain you've set up.
+
+## Deliverability checklist
+
+Even with working SMTP credentials, alerts can land in spam without proper DNS setup. For any custom domain on any provider:
+
+- **SPF** — a TXT record listing the provider's sending hosts (e.g. `v=spf1 include:_spf.google.com ~all` for Workspace).
+- **DKIM** — signing keys published as TXT records. Every major provider generates these automatically and gives you a CNAME or TXT to add.
+- **DMARC** — a TXT record at `_dmarc.yourdomain.com` telling receivers what to do with unaligned mail (start with `p=none` for monitoring, tighten later).
+
+Without SPF/DKIM, Gmail and Microsoft 365 will quietly mark alerts as spam — your test email will land, your real alerts may not.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="535 Authentication failed / Username and Password not accepted">
+    For Gmail: you used your normal password instead of an App Password, or the App Password was copied with spaces. Regenerate and paste without whitespace.
+
+    For other providers: the credentials are wrong, the account is suspended, or the API key doesn't have Mail Send permission.
+  </Accordion>
+  <Accordion title="Connection timeout on port 587 or 465">
+    Your server's outbound firewall blocks the port. Try the other port (587 ↔ 465). On managed hosts like DigitalOcean droplets, port 25 is usually blocked by default but 587 is open.
+  </Accordion>
+  <Accordion title="Test email succeeds but real alerts never arrive">
+    The test uses the same dispatch path as real alerts, so credentials are fine. Look in spam/junk, check that your recipient list is correct on the channel, and verify DMARC/SPF alignment for the From address.
+  </Accordion>
+  <Accordion title="Alerts arrive but marked as spam">
+    Missing or misconfigured SPF/DKIM. Run the From domain through [mxtoolbox.com/deliverability](https://mxtoolbox.com/deliverability) and fix anything flagged. A warmup period is also normal for a brand-new sending domain.
+  </Accordion>
+  <Accordion title="Gmail says 'Less secure app access' is off">
+    That setting is gone as of 2024. You must use 2FA + App Passwords, or switch to OAuth (not currently supported by NightOwl's SMTP channel — use a relay like SES or SendGrid instead).
+  </Accordion>
+</AccordionGroup>
+
+## Security notes
+
+- Passwords are encrypted at rest with Laravel's `Crypt` facade, keyed off `APP_KEY`. They're decrypted only in memory at dispatch time.
+- Rotating an SMTP password doesn't invalidate pending alerts — they're sent in real time, not queued with cached credentials.
+- If you revoke an App Password or API key, the next alert will fail loudly (visible in the dashboard's channel error banner) rather than silently dropping.

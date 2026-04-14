@@ -1,0 +1,82 @@
+---
+title: "Multiple Instances"
+description: "Scale the NightOwl agent by running multiple instances for high-traffic applications."
+---
+
+A single NightOwl agent handles ~13,400 payloads/s on modest hardware — enough for most production Laravel apps. When you need more, scale horizontally rather than vertically: run several agents on the same box (or several boxes), fan ingest across them, and share the same PostgreSQL destination.
+
+## When you need more than one instance
+
+- Your health dashboard shows buffer depth consistently climbing during peak hours.
+- A single agent can't keep ingest and drain aligned even after tuning drain workers.
+- You want redundancy — if one agent crashes, the application shouldn't lose telemetry while it restarts.
+
+If your bottleneck is drain (PostgreSQL writes) rather than ingest (TCP accept), start with `NIGHTOWL_DRAIN_WORKERS` before adding instances.
+
+## Scaling drain workers first
+
+Each agent runs one ingest loop plus N drain workers. Drain workers claim rows from the SQLite buffer atomically, so they never race.
+
+```env
+NIGHTOWL_DRAIN_WORKERS=4
+```
+
+A good starting point is one drain worker per PostgreSQL vCPU, capped by how many connections PgBouncer can spare. If you see idle workers in the health dashboard, you've overshot.
+
+## Running multiple agents on one host (Linux)
+
+Linux's `SO_REUSEPORT` lets multiple processes bind the same TCP port; the kernel distributes accepted connections across them. Start agents with `NIGHTOWL_SO_REUSEPORT=true`:
+
+```bash
+# systemd / supervisord — spawn N identical workers
+NIGHTOWL_AGENT_PORT=2407 \
+NIGHTOWL_SO_REUSEPORT=true \
+NIGHTOWL_DRAIN_WORKERS=2 \
+php artisan nightowl:agent
+```
+
+Run the same command as multiple units (e.g. `nightowl-agent@1`, `nightowl-agent@2`). Each process gets its own SQLite buffer file but writes to the same PostgreSQL database.
+
+<Warning>
+  `SO_REUSEPORT` distributes connections round-robin on Linux only. On macOS the kernel gives every new connection to the first listener, so running multiple agents on the same port locally won't load-balance — use different ports during development.
+</Warning>
+
+## Running multiple agents across hosts
+
+For horizontal scaling across machines, put a TCP load balancer (HAProxy, nginx stream module, or a cloud LB) in front of the agent pool. Your application sends to the load balancer's address:
+
+```env
+NIGHTOWL_AGENT_HOST=agent-lb.internal
+NIGHTOWL_AGENT_PORT=2407
+```
+
+Use a least-connections balancing policy. Agents are stateless from the app's perspective — any agent can accept any payload — so there's no sticky-session concern.
+
+## PostgreSQL and PgBouncer
+
+Every agent instance opens a pool of PostgreSQL connections. Without pooling, N agents × M drain workers quickly exhausts `max_connections`. The shipped `docker-compose.yml` includes a PgBouncer container on port 6432:
+
+```env
+DB_HOST=pgbouncer
+DB_PORT=6432
+```
+
+Transaction-level pooling works cleanly with NightOwl's workload because drain batches are short-lived transactions.
+
+## Sizing math
+
+A rough budget for capacity planning:
+
+| Component        | Per-instance capacity |
+| ---------------- | --------------------- |
+| Ingest (TCP)     | ~13,400 payloads/s    |
+| Drain (1 worker) | ~3,000 rows/s (COPY)  |
+| SQLite buffer    | 100,000 rows max      |
+
+If your app sends 40,000 payloads/s at peak, you need at least three agents and enough drain workers in aggregate to sustain 40,000 rows/s — roughly 14 workers, spread across the three instances, backed by a PostgreSQL instance that can keep up.
+
+## Verifying the fan-out
+
+Open the health dashboard after starting the second agent. Each instance reports its own row in the **Instances** table with distinct process IDs, ingest rates, and buffer depths. The sum of the per-instance ingest rates should match your application's outgoing traffic.
+
+If one instance is getting all the traffic, check that `SO_REUSEPORT` is actually enabled — a common symptom is one agent doing 100% while the others sit at 0%.

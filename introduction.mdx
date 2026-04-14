@@ -1,0 +1,30 @@
+---
+title: Introduction
+description: The monitoring dashboard for Laravel Nightwatch — your data, your database.
+---
+
+NightOwl is a monitoring dashboard built on top of [Laravel Nightwatch](https://github.com/laravel/nightwatch). It takes the telemetry data that Nightwatch collects from your Laravel app and stores it in your own PostgreSQL database.
+
+## How it works
+
+1. **Laravel Nightwatch** instruments your app and collects telemetry (requests, exceptions, queries, jobs, etc.)
+2. **The NightOwl agent** receives that telemetry, buffers it locally, and drains it into your PostgreSQL database
+3. **The NightOwl dashboard** gives you a full monitoring UI on top of that data
+
+## What you get
+
+- All 12 Laravel event types: requests, exceptions, queries, jobs, commands, scheduled tasks, cache, mail, notifications, outgoing requests, logs, and users
+- Issue management with priority, assignment, comments, and activity timelines
+- Multi-channel alert notifications (Slack, Discord, Email, Webhook)
+- Performance thresholds that auto-create issues
+- Granular data clearing with preview and protection windows
+- Agent instance health monitoring with capacity insights
+- No event limits, no retention caps — you scale the way you want
+
+## Agent reference
+
+The full agent README — every environment variable, production deployment recipes (supervisord, systemd), testing setup, and internals — lives in the agent repo:
+
+<Card title="NightOwl Agent on GitHub" icon="github" href="https://github.com/lemed99/nightowl-agent#readme">
+  Installation, configuration reference, production deployment, and architecture notes.
+</Card>

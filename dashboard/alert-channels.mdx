@@ -1,0 +1,100 @@
+---
+title: "Alert Channels"
+description: "Configure notification channels for issue alerts — Email, Slack, Discord, and Webhooks."
+---
+
+Alert channels decide *where* NightOwl tells you something needs attention. They're configured per app in **Settings → Alert Channels**, and every enabled channel fires for the same set of triggers — so you can mix a noisy Slack firehose with a quiet email summary without re-wiring your issue workflow.
+
+## What fires an alert
+
+Alerts are issue-state-driven, not occurrence-driven:
+
+- A new issue opens (first time the fingerprint is seen).
+- A resolved issue reoccurs (same fingerprint, new occurrence after the resolve timestamp).
+- A performance issue opens because a route crossed its p95 threshold.
+
+Individual exceptions *within* an already-open issue do not re-alert. This keeps incident storms from flooding every channel.
+
+## The four channel types
+
+<CardGroup cols={2}>
+  <Card title="Email (BYOD SMTP)" icon="envelope">
+    Delivered through your own SMTP credentials — SendGrid, Postmark, AWS SES, Mailgun, or a self-hosted MTA. Credentials are encrypted at rest with Laravel's `Crypt` facade.
+  </Card>
+  <Card title="Slack" icon="slack">
+    Incoming webhook URL from a Slack app. Rich message formatting with issue title, environment, stack-trace excerpt, and a direct link back to the dashboard.
+  </Card>
+  <Card title="Discord" icon="discord">
+    Channel webhook URL from Discord's **Integrations** settings. Same rich embed as Slack, adapted to Discord's format.
+  </Card>
+  <Card title="Webhook" icon="webhook">
+    Arbitrary HTTPS endpoint. JSON payload, optional HMAC-SHA256 signature in the `X-NightOwl-Signature` header for verification.
+  </Card>
+</CardGroup>
+
+You can configure any number of channels per app, and any mix of types. Each channel has an independent enabled/disabled toggle.
+
+## Email
+
+Email is BYOD — *bring your own deliverability*. NightOwl never sends from a shared pool, which means alerts land in your team's inbox with your domain and your reputation.
+
+Required fields: SMTP host, port, username, password, encryption (TLS/SSL/none), from address, from name. The password is encrypted in the database via `Crypt` and decrypted only in-memory when dispatching.
+
+Recipients are specified as a comma-separated list in the channel config. For team-wide alerts, use a distribution list (`engineering@…`) rather than listing individuals.
+
+## Slack
+
+1. In Slack, create an app at [api.slack.com/apps](https://api.slack.com/apps) → *Incoming Webhooks* → *Add New Webhook to Workspace*.
+2. Copy the webhook URL (starts with `https://hooks.slack.com/services/…`).
+3. Paste into the Slack channel config in the NightOwl dashboard.
+
+The alert includes issue title, environment badge, first five app-frame stack lines, and a **View in NightOwl** button linking to the issue detail page.
+
+## Discord
+
+1. In Discord, open **Server Settings → Integrations → Webhooks → New Webhook**, pick the destination channel, and copy the URL.
+2. Paste into the Discord channel config.
+
+Discord supports embeds, so the alert renders with a colored side bar (red for exceptions, amber for performance), title, and fields for environment, count, and first-seen.
+
+## Webhook
+
+For anything more custom — routing to PagerDuty, OpsGenie, a bespoke router, or your own incident bot — use a webhook channel. The payload shape:
+
+```json
+{
+  "event": "issue.opened",
+  "issue": {
+    "id": 4812,
+    "type": "exception",
+    "title": "TypeError: Cannot read properties of null",
+    "environment": "production",
+    "priority": "high",
+    "url": "https://usenightowl.com/dashboard/abc123/issues/4812"
+  },
+  "app": { "id": "abc123", "name": "shop-api" },
+  "occurrence": { "count_24h": 18, "first_seen": "2026-04-14T09:12:33Z" }
+}
+```
+
+If you set a **signing secret** on the channel, NightOwl signs each request with HMAC-SHA256 over the raw body:
+
+```
+X-NightOwl-Signature: sha256=<hex-digest>
+```
+
+Verify by recomputing the digest with your secret and the raw body, then comparing with `hash_equals`. Reject any request whose signature doesn't match — this prevents forged alerts from reaching your downstream system.
+
+## Testing a channel
+
+Every channel has a **Send test** button that dispatches a synthetic `issue.opened` alert immediately. Use it after setup and after any credential rotation. The test uses the exact same dispatch path as real alerts, so a successful test guarantees real alerts will reach the same destination.
+
+If a test fails, the dashboard shows the specific error (SMTP auth failure, 4xx response from a webhook, invalid Slack URL) rather than a generic message.
+
+## Toggling and disabling
+
+Channels can be disabled without deleting. A disabled channel is skipped by the dispatcher but preserves its config and history — useful for silencing a channel during maintenance without losing the webhook URL or SMTP credentials.
+
+## Under the hood
+
+Alert dispatch goes through the `ChannelDispatcherFactory` on the backend, which resolves one of four implementations (`EmailDispatcher`, `SlackDispatcher`, `DiscordDispatcher`, `WebhookDispatcher`). The `nightowl:notify-issues` artisan command runs on a schedule, fans out to every enabled channel per app, and tolerates individual channel failures — one broken webhook never blocks Slack from firing.

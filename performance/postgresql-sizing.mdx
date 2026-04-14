@@ -1,0 +1,37 @@
+---
+title: PostgreSQL Sizing
+description: Recommended PostgreSQL configurations based on your traffic volume.
+---
+
+The agent is only half the equation. Your PostgreSQL instance needs to keep up with the write volume. Here's what we recommend based on your traffic.
+
+## Small traffic — up to 50K requests/day
+
+| Component | Recommendation |
+|---|---|
+| Agent | 1 instance |
+| PostgreSQL | Shared, 2 vCPU, 1GB RAM |
+| Disk estimate | ~2GB/month |
+| Examples | DigitalOcean $15/mo, Supabase free tier, AWS RDS db.t3.micro |
+
+## Medium traffic — 50K to 500K requests/day
+
+| Component | Recommendation |
+|---|---|
+| Agent | 1-2 instances |
+| PostgreSQL | Dedicated, 4 vCPU, 4GB RAM |
+| Disk estimate | ~10-30GB/month |
+| Examples | DigitalOcean $60/mo, AWS RDS db.t3.medium |
+
+## High traffic — 500K to 5M requests/day
+
+| Component | Recommendation |
+|---|---|
+| Agent | 2-4 instances + PgBouncer |
+| PostgreSQL | 8+ vCPU, 16GB+ RAM, SSD |
+| Disk estimate | ~50-200GB/month |
+| Examples | AWS RDS db.r6g.xlarge, DigitalOcean $120+/mo |
+
+<Note>
+  These are conservative estimates. Actual storage depends on your payload sizes, how many monitoring modules you enable, and your data clearing schedule.
+</Note>

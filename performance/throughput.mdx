@@ -1,0 +1,34 @@
+---
+title: Agent Throughput
+description: Performance characteristics of the NightOwl agent.
+---
+
+The NightOwl agent is built for throughput. A single instance handles **13,000+ payloads per second** using PostgreSQL COPY protocol, SQLite WAL buffering, and batch draining.
+
+## How it works
+
+1. **Ingest**: The agent receives telemetry over TCP using ReactPHP. Payloads are parsed and written to a local SQLite WAL buffer.
+2. **Drain**: A background worker reads batches of 5,000 rows from the buffer and writes them to PostgreSQL using the COPY protocol (10x faster than INSERT).
+3. **Back-pressure**: When the SQLite buffer exceeds 100,000 pending rows, the agent gracefully rejects new payloads. Your app is never blocked.
+
+## Key optimizations
+
+- **SQLite WAL mode** — concurrent reads and writes without locking
+- **PostgreSQL COPY protocol** — bulk loading for 10 of 12 tables (exceptions and users use INSERT for upsert)
+- **`synchronous_commit = off`** — 2-5x write throughput boost on PostgreSQL connections
+- **Batch size of 5,000** — configurable via `NIGHTOWL_DRAIN_BATCH_SIZE`
+
+## Benchmarks
+
+On a single instance (M1 Mac, PostgreSQL via Docker):
+
+| Metric | Value |
+|---|---|
+| Ingest throughput | 13,400 payloads/s |
+| Drain throughput | Keeps pace with ingest |
+| Back-pressure threshold | 100,000 pending rows |
+| Memory usage | ~200-400MB |
+
+<Note>
+  Actual throughput depends on your hardware, PostgreSQL instance, and network latency. The agent's built-in health dashboard shows real-time performance metrics.
+</Note>

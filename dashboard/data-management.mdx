@@ -1,0 +1,86 @@
+---
+title: "Data Management"
+description: "Manage monitoring data retention, pruning, and storage for your application."
+---
+
+NightOwl is a bring-your-own-database product. Your telemetry — every request, query, exception, job attempt, and log line — lives in a PostgreSQL instance you control. That gives you full ownership of retention, backups, and compliance, and it keeps storage costs decoupled from per-seat dashboard pricing.
+
+## Storage model
+
+Every connected app points at one PostgreSQL database. The agent writes through SQLite's WAL buffer into ~20 `nightowl_*` tables using `COPY` for high-volume event tables and `INSERT … ON CONFLICT` for upsert tables (`nightowl_exceptions`, `nightowl_users`).
+
+Because the data lives in *your* PostgreSQL, you can:
+
+- Connect your own BI tools (Metabase, Grafana, Superset) directly to the `nightowl` schema.
+- Run arbitrary SQL for ad-hoc analysis without hitting an API rate limit.
+- Control exactly where the data is geographically stored, for GDPR or data-residency reasons.
+- Back it up alongside the rest of your database with tools you already trust.
+
+## Retention
+
+Telemetry is high-volume and low-shelf-life. The default retention tier is 7 days for event tables and 30 days for issue fingerprints, which is usually enough for debugging but avoids letting the database grow unbounded.
+
+Configure retention per app in **Settings → Data Management**:
+
+| Table group            | What it holds                                          | Typical retention |
+| ---------------------- | ------------------------------------------------------ | ----------------- |
+| Requests / jobs / etc. | One row per event. High-volume, short-lived.           | 3–14 days         |
+| Exceptions             | Fingerprint-grouped. Low-volume, long-lived.           | 30–90 days        |
+| Issues / activity      | Triage state — status, priority, comments, timeline.   | Indefinite        |
+| Alert history          | Record of each fired alert for audit.                  | 30 days           |
+
+Issue records themselves are never auto-pruned — resolving an issue doesn't delete its history. Only the raw occurrence rows are subject to retention.
+
+## Pruning
+
+The `nightowl:prune` artisan command deletes rows older than the configured retention for each table. Schedule it alongside your other Laravel scheduled tasks:
+
+```php
+// app/Console/Kernel.php
+$schedule->command('nightowl:prune')->hourly();
+```
+
+Pruning uses batched `DELETE … WHERE created_at < ?` with `LIMIT` to avoid long-running transactions on large tables. On PostgreSQL, follow up occasionally with `VACUUM (ANALYZE)` to reclaim disk — the command doesn't do this automatically because it may compete with production workload.
+
+## Manual cleanup and resets
+
+From **Settings → Danger Zone**:
+
+- **Prune now** — runs the retention-based prune immediately rather than waiting for the next scheduled run.
+- **Wipe telemetry** — truncates all event tables but keeps issues, settings, alert channels, and team membership. Useful after a staging incident generated noise you want out of your dashboard.
+- **Delete app** — tears down the app record on NightOwl's side. *Does not* drop your `nightowl_*` tables — that's your database, and we won't touch it.
+
+<Warning>
+  Wipe telemetry is irreversible. There's no soft-delete. Take a PostgreSQL backup first if the data has any archival value.
+</Warning>
+
+## Backups
+
+NightOwl doesn't manage backups — that's your PostgreSQL provider's job. The `nightowl_*` tables back up the same way the rest of your database does. If you use `pg_dump`, include the schema you configured (`public` by default) and you'll capture everything. If you use managed snapshots (RDS, Cloud SQL), they already cover it.
+
+For point-in-time-restore strategies, treat the `nightowl_*` tables like any other high-write workload — their WAL volume scales with telemetry throughput, so budget your WAL storage accordingly.
+
+## Sizing expectations
+
+As a rough baseline for capacity planning:
+
+| Workload                         | Daily rows          | Daily storage (compressed) |
+| -------------------------------- | ------------------- | -------------------------- |
+| Small app (~100 req/s)           | ~8.6M               | ~500 MB                    |
+| Medium app (~1,000 req/s)        | ~86M                | ~5 GB                      |
+| Large app (~10,000 req/s)        | ~860M               | ~50 GB                     |
+
+At 7-day retention these multiply by 7. See [PostgreSQL sizing](/performance/postgresql-sizing) for disk, memory, and vCPU guidance.
+
+## Exporting data
+
+For compliance exports, legal holds, or moving to another tool, use direct PostgreSQL access:
+
+```bash
+pg_dump -h <host> -U <user> -d <db> \
+  --table='nightowl_*' \
+  --format=custom \
+  -f nightowl-export.dump
+```
+
+There's no proprietary format — the schema is plain PostgreSQL, and every column is documented in the agent package's migration files.
