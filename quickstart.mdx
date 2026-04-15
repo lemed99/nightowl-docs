@@ -7,12 +7,12 @@ description: Get NightOwl running in 5 minutes.
 
 Create your NightOwl account at [usenightowl.com/signup](https://usenightowl.com/signup), add your application, and connect your PostgreSQL database. You'll get an agent token to authenticate your instance.
 
-## 2. Install the packages
+## 2. Install the agent
 
-Add Laravel Nightwatch (if you haven't already) and the NightOwl agent to your Laravel app:
+Add the NightOwl agent to your Laravel app (it pulls in `laravel/nightwatch` automatically as a dependency):
 
 ```bash
-composer require laravel/nightwatch nightowl/agent
+composer require nightowl/agent
 ```
 
 ## 3. Configure environment variables
