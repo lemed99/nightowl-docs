@@ -19,7 +19,7 @@ The endpoint is app-scoped: `/api/mcp/<app-id>`. Each client connection talks to
 
 ```bash
 claude mcp add --transport http nightowl \
-  https://usenightowl.com/api/mcp/<app-id> \
+  https://api.usenightowl.com/api/mcp/<app-id> \
   --header "Authorization: Bearer <token>"
 ```
 
@@ -29,7 +29,7 @@ Run `/mcp` in a Claude Code session to verify the server connected. The six tool
 
 ```bash
 codex mcp add nightowl \
-  --url https://usenightowl.com/api/mcp/<app-id> \
+  --url https://api.usenightowl.com/api/mcp/<app-id> \
   --header "Authorization: Bearer <token>"
 ```
 
@@ -44,7 +44,7 @@ Bearer-token HTTP MCP isn't native in these clients yet — use the `mcp-remote`
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://usenightowl.com/api/mcp/<app-id>",
+        "https://api.usenightowl.com/api/mcp/<app-id>",
         "--header",
         "Authorization: Bearer <token>"
       ]
@@ -54,7 +54,7 @@ Bearer-token HTTP MCP isn't native in these clients yet — use the `mcp-remote`
 ```
 
 <Note>
-  Self-hosted NightOwl? Replace `https://usenightowl.com` with your own dashboard URL. The path (`/api/mcp/<app-id>`) is identical.
+  Self-hosted NightOwl? Replace `https://api.usenightowl.com` with your own API URL. The path (`/api/mcp/<app-id>`) is identical.
 </Note>
 
 ## 3. Available tools
