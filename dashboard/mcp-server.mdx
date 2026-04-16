@@ -3,31 +3,50 @@ title: "MCP Server"
 description: "Connect Claude Code, Codex, Cursor, and other AI assistants to NightOwl via the Model Context Protocol."
 ---
 
-NightOwl ships a remote MCP server so AI coding assistants can browse issues, read stack traces, and update statuses from your editor. Every AI-initiated change is logged in the issue activity timeline with `actor_type=mcp`, so human and AI edits stay visually distinct and a token can be revoked instantly.
+NightOwl ships two remote MCP servers so AI coding assistants can drive the full dashboard — browse telemetry, triage issues, provision apps, manage teams, configure alert channels. Every AI-initiated change is logged with `actor_type=mcp`, so human and AI edits stay visually distinct and a token can be revoked instantly.
 
 ## 1. Generate a personal access token
 
-Sign in to the dashboard, open **Account → Settings**, and scroll to the **MCP Tokens** card. Give the token a memorable label (e.g. *"Laptop — Claude Code"*) and copy the token shown once in the modal. After that, only the label, creation date, and last-used timestamp are visible. Revoking a token from the same page blocks all clients using it immediately.
+Sign in to the dashboard, open **Account → MCP Tokens**, and create a token with a memorable label (e.g. *"Laptop — Claude Code"*). The raw token is shown once — copy it immediately; only the label, creation date, and last-used timestamp are visible afterwards. Revoking a token blocks every client using it instantly.
 
-Tokens are user-scoped and inherit your team membership. They have the `mcp` ability and can only be used against the MCP endpoint.
+Tokens are user-scoped, inherit your team membership, and carry the `mcp` ability — they only work against the MCP endpoints.
 
-## 2. Connect your client
+## 2. The two servers
 
-The endpoint is app-scoped: `/api/mcp/<app-id>`. Each client connection talks to exactly one NightOwl app. Copy the app ID from the Apps page in the dashboard.
+NightOwl exposes two MCP endpoints. You'll usually register both.
+
+| Server | Endpoint | Scope | Typical use |
+| ------ | -------- | ----- | ----------- |
+| **Platform** | `/api/mcp/platform` | Your account + every team you belong to | Provisioning apps, inviting teammates, rotating agent tokens, inspecting agent health |
+| **Tenant** | `/api/mcp/<app-id>` | A single connected app's telemetry | Triage issues, browse requests / exceptions / queries / jobs / logs, configure alert channels, manage data retention |
+
+The platform server has **25 tools**; the tenant server has **56**. Full coverage of the dashboard's CRUD surface.
+
+## 3. Connect your client
 
 ### Claude Code
 
+Register both servers:
+
 ```bash
+claude mcp add --transport http nightowl-platform \
+  https://api.usenightowl.com/api/mcp/platform \
+  --header "Authorization: Bearer <token>"
+
 claude mcp add --transport http nightowl \
   https://api.usenightowl.com/api/mcp/<app-id> \
   --header "Authorization: Bearer <token>"
 ```
 
-Run `/mcp` in a Claude Code session to verify the server connected. The six tools should appear under the `nightowl` entry.
+Run `/mcp` in Claude Code to verify both servers connected.
 
 ### Codex
 
 ```bash
+codex mcp add nightowl-platform \
+  --url https://api.usenightowl.com/api/mcp/platform \
+  --header "Authorization: Bearer <token>"
+
 codex mcp add nightowl \
   --url https://api.usenightowl.com/api/mcp/<app-id> \
   --header "Authorization: Bearer <token>"
@@ -35,11 +54,20 @@ codex mcp add nightowl \
 
 ### Cursor, Windsurf, Zed (via mcp-remote)
 
-Bearer-token HTTP MCP isn't native in these clients yet — use the `mcp-remote` shim to proxy the remote server as stdio. Add to `.cursor/mcp.json` (or the equivalent for Windsurf/Zed):
+Bearer-token HTTP MCP isn't native in these clients yet — use the `mcp-remote` shim to proxy remote servers as stdio. Add to `.cursor/mcp.json` (or equivalent):
 
 ```json
 {
   "mcpServers": {
+    "nightowl-platform": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://api.usenightowl.com/api/mcp/platform",
+        "--header",
+        "Authorization: Bearer <token>"
+      ]
+    },
     "nightowl": {
       "command": "npx",
       "args": [
@@ -54,23 +82,37 @@ Bearer-token HTTP MCP isn't native in these clients yet — use the `mcp-remote`
 ```
 
 <Note>
-  Self-hosted NightOwl? Replace `https://api.usenightowl.com` with your own API URL. The path (`/api/mcp/<app-id>`) is identical.
+  Self-hosted NightOwl? Replace `https://api.usenightowl.com` with your own API URL. The paths are identical.
 </Note>
 
-## 3. Available tools
+## 4. What's available
 
-All tools operate on the app ID in the URL — AI clients never need to pass `app_id` as an argument.
+### Platform server (`/api/mcp/platform`)
 
-| Tool | Purpose |
-| ---- | ------- |
-| `list_issues` | Filter issues by type, status, environment, priority, assignee, or free-text search. Returns compact summaries. |
-| `get_issue` | Full issue detail: latest exception, stack trace, recent occurrences, comments, and activity timeline. |
-| `get_stack_trace` | Parsed stack frames classified as `app` vs `vendor`. Optional `trace_id` for a specific occurrence. |
-| `get_issue_occurrences` | Time-bucketed counts over `24h`, `7d`, or `30d`. Includes breakdown by environment and unique users affected. |
-| `update_issue_status` | Change `status` (`open` / `resolved` / `ignored`), `priority`, or `assignee`. Fires the same alert channels a human edit would. |
-| `add_issue_comment` | Post a markdown comment. Pass `resolve: true` to auto-resolve the issue in the same call. |
+| Category | Tools |
+| -------- | ----- |
+| **Apps** | `list_apps`, `get_app`, `create_app`, `update_app`, `delete_app` ⚠, `test_app_connection`, `regenerate_app_token` ⚠ |
+| **Agent health** | `app_health`, `app_health_history`, `app_health_diagnoses` |
+| **Teams** | `list_teams`, `get_team`, `create_team`, `update_team`, `leave_team`, `update_team_member`, `remove_team_member` |
+| **Invitations** | `list_team_invitations`, `create_team_invitation`, `revoke_team_invitation`, `accept_team_invitation` |
+| **MCP tokens** | `list_mcp_tokens`, `create_mcp_token`, `delete_mcp_token` |
+| **Subscription** | `show_subscription` (read only — billing mutations use the dashboard) |
 
-## 4. Safety model
+### Tenant server (`/api/mcp/<app-id>`)
+
+| Category | Tools |
+| -------- | ----- |
+| **Overview** | `dashboard_overview` |
+| **Issues** | `list_issues`, `get_issue`, `get_stack_trace`, `get_issue_occurrences`, `update_issue_status`, `bulk_update_issues`, `add_issue_comment` |
+| **Telemetry** | `list_requests`/`get_request`/`get_route_detail`, `list_exceptions`/`get_exception`, `list_queries`/`get_query`, `list_jobs`/`get_job`/`get_job_attempt`, `list_commands`/`get_command`/`get_command_attempt`, `list_scheduled_tasks`/`get_scheduled_task`/`get_scheduled_task_attempt`, `list_cache_events`, `list_logs`/`get_log`, `list_mail`/`get_mail`, `list_notifications`/`get_notification`, `list_outgoing_requests`/`get_outgoing_request`, `list_users`/`get_user` |
+| **Alerts** | `list_alerts`, `mark_alert_read`, `mark_all_alerts_read` |
+| **Alert channels** | `list_alert_channels`, `create_alert_channel`, `update_alert_channel`, `delete_alert_channel`, `toggle_alert_channel`, `test_alert_channel` |
+| **Settings** | `get_settings`, `update_settings`, `list_environments`, `list_thresholds`, `update_thresholds`, `list_threshold_targets`, `delete_application` ⚠ |
+| **Data management** | `filter_options`, `preview_deletion`, `destroy_data` ⚠ |
+
+⚠ = destructive. These tools require an explicit `confirm: "YES"` argument and cannot be invoked accidentally.
+
+## 5. Safety model
 
 <CardGroup cols={2}>
   <Card title="Scoped tokens" icon="shield-check">
@@ -80,46 +122,73 @@ All tools operate on the app ID in the URL — AI clients never need to pass `ap
     Every mutating call writes an activity record with `actor_type=mcp` and `actor_meta` carrying the token label and client user-agent.
   </Card>
   <Card title="Instant revoke" icon="ban">
-    Deleting a token from Account → Settings blocks all in-flight and future calls using it. No redeploy.
+    Deleting a token from Account → MCP Tokens blocks every client using it — no redeploy, no restart.
+  </Card>
+  <Card title="Confirmation gates" icon="lock">
+    Destructive tools (`delete_app`, `regenerate_app_token`, `destroy_data`, `delete_application`) refuse to execute without `confirm: "YES"`. Dry-run counterparts (`preview_deletion`) are always safe.
   </Card>
   <Card title="Webhook parity" icon="webhook">
     Status changes made via MCP fire the same Slack, Discord, email, and webhook channels that a human edit would.
   </Card>
+  <Card title="Self-revoke protection" icon="shield">
+    `delete_mcp_token` refuses to delete the token currently making the call. Revoke it from the dashboard instead.
+  </Card>
 </CardGroup>
 
-## 5. Example workflow
+## 6. Example workflows
 
-Once the server is connected, a single prompt can span NightOwl data and your codebase:
+Once both servers are connected, a single prompt can span NightOwl data, your codebase, and team operations:
 
 ```text
 > What are the top three open exceptions in production,
   and is any of them caused by code I changed in the last week?
 ```
 
-The assistant calls `list_issues` with `{status: "open", environment: "production", limit: 3}`, then `get_issue` for each hit, then runs `git log` locally to cross-reference authorship — root cause in one turn.
+The assistant calls `list_issues` on the tenant server, then `get_issue` on each hit, then runs `git log` locally to cross-reference authorship — root cause in one turn.
 
-When you've fixed one, close the loop:
+Close the loop:
 
 ```text
-> Mark issue #4812 as resolved and leave a comment explaining
-  the null check in OrderService was the fix.
+> Mark issues #4812 and #4815 as resolved — both were fixed by
+  the null check I just merged in OrderService.
 ```
 
-A single `add_issue_comment` call with `resolve: true` posts the comment, flips the status, and fires the configured alert channels — all attributed to MCP rather than to you directly.
+A single `bulk_update_issues` call flips both statuses, writes activity rows, and fires the configured alert channels — attributed to MCP rather than to you directly.
+
+Provision a new environment:
+
+```text
+> Create a staging app in the Acme team, test the DB connection,
+  and give me the agent token so I can add it to Render's env vars.
+```
+
+Two platform calls (`test_app_connection`, `create_app`) — the agent token comes back once in the response.
+
+Retention cleanup:
+
+```text
+> How much data would I free up by deleting requests older than
+  90 days from the /api/legacy/* routes?
+```
+
+`preview_deletion` returns per-table row counts. Claude reads them, summarizes, and only invokes `destroy_data` (with `confirm: "YES"`) after you approve.
 
 ## Troubleshooting
 
 <AccordionGroup>
-  <Accordion title="Claude Code says the server failed to connect">
-    The most common cause is a stale or mistyped token. Regenerate the token in the dashboard and re-run `claude mcp add`. Claude caches server metadata per workspace — run `claude mcp remove nightowl` first, then re-add.
+  <Accordion title="The client says the server failed to connect">
+    Most common cause: a stale or mistyped token. Regenerate it in the dashboard and re-add the MCP server. Some clients cache server metadata — remove and re-add the server entry to force a refresh.
   </Accordion>
-  <Accordion title="The server returns 'App not found'">
+  <Accordion title="Tenant calls return 'App not found'">
     The `app-id` in the URL must match an app your user account has team access to. Copy the ID directly from the Apps page — it's the last segment of the app detail URL.
   </Accordion>
+  <Accordion title="A destructive tool returned a 'refusing to X' error">
+    Destructive tools require `confirm: "YES"` (exact string, uppercase, no punctuation). This is deliberate — it prevents a misinterpreted prompt from wiping an app.
+  </Accordion>
   <Accordion title="Mutating calls succeed but the dashboard is stale">
-    The tool calls flush the app cache, so the dashboard should refresh within its normal polling interval (30s for list pages, 10s for dashboards). If it lingers longer, hard-refresh the browser tab.
+    Tools flush the app cache, so the dashboard refreshes within its normal polling interval (30s for list pages, 10s for dashboards). If it lingers longer, hard-refresh the browser tab.
   </Accordion>
   <Accordion title="I don't see the activity in the timeline">
-    Check the activity filter — the timeline supports filtering by `actor_type`. MCP-authored actions share the timeline with human ones and are only hidden if you've filtered them out.
+    The timeline supports filtering by `actor_type`. MCP-authored actions share the timeline with human ones and are only hidden if the filter excludes them.
   </Accordion>
 </AccordionGroup>
