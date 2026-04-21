@@ -17,8 +17,8 @@ NightOwl exposes two MCP endpoints. You'll usually register both.
 
 | Server | Endpoint | Scope | Typical use |
 | ------ | -------- | ----- | ----------- |
-| **Platform** | `/api/mcp/platform` | Your account + every team you belong to | Provisioning apps, inviting teammates, rotating agent tokens, inspecting agent health |
-| **Tenant** | `/api/mcp/<app-id>` | A single connected app's telemetry | Triage issues, browse requests / exceptions / queries / jobs / logs, configure alert channels, manage data retention |
+| **Platform** | `/mcp/platform` | Your account + every team you belong to | Provisioning apps, inviting teammates, rotating agent tokens, inspecting agent health |
+| **Tenant** | `/mcp/<app-id>` | A single connected app's telemetry | Triage issues, browse requests / exceptions / queries / jobs / logs, configure alert channels, manage data retention |
 
 The platform server has **25 tools**; the tenant server has **56**. Full coverage of the dashboard's CRUD surface.
 
@@ -30,11 +30,11 @@ Register both servers:
 
 ```bash
 claude mcp add --transport http nightowl-platform \
-  https://api.usenightowl.com/api/mcp/platform \
+  https://api.usenightowl.com/mcp/platform \
   --header "Authorization: Bearer <token>"
 
 claude mcp add --transport http nightowl \
-  https://api.usenightowl.com/api/mcp/<app-id> \
+  https://api.usenightowl.com/mcp/<app-id> \
   --header "Authorization: Bearer <token>"
 ```
 
@@ -44,11 +44,11 @@ Run `/mcp` in Claude Code to verify both servers connected.
 
 ```bash
 codex mcp add nightowl-platform \
-  --url https://api.usenightowl.com/api/mcp/platform \
+  --url https://api.usenightowl.com/mcp/platform \
   --header "Authorization: Bearer <token>"
 
 codex mcp add nightowl \
-  --url https://api.usenightowl.com/api/mcp/<app-id> \
+  --url https://api.usenightowl.com/mcp/<app-id> \
   --header "Authorization: Bearer <token>"
 ```
 
@@ -63,7 +63,7 @@ Bearer-token HTTP MCP isn't native in these clients yet — use the `mcp-remote`
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://api.usenightowl.com/api/mcp/platform",
+        "https://api.usenightowl.com/mcp/platform",
         "--header",
         "Authorization: Bearer <token>"
       ]
@@ -72,7 +72,7 @@ Bearer-token HTTP MCP isn't native in these clients yet — use the `mcp-remote`
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://api.usenightowl.com/api/mcp/<app-id>",
+        "https://api.usenightowl.com/mcp/<app-id>",
         "--header",
         "Authorization: Bearer <token>"
       ]
@@ -87,7 +87,7 @@ Bearer-token HTTP MCP isn't native in these clients yet — use the `mcp-remote`
 
 ## 4. What's available
 
-### Platform server (`/api/mcp/platform`)
+### Platform server (`/mcp/platform`)
 
 | Category | Tools |
 | -------- | ----- |
@@ -98,7 +98,7 @@ Bearer-token HTTP MCP isn't native in these clients yet — use the `mcp-remote`
 | **MCP tokens** | `list_mcp_tokens`, `create_mcp_token`, `delete_mcp_token` |
 | **Subscription** | `show_subscription` (read only — billing mutations use the dashboard) |
 
-### Tenant server (`/api/mcp/<app-id>`)
+### Tenant server (`/mcp/<app-id>`)
 
 | Category | Tools |
 | -------- | ----- |
