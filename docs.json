@@ -93,8 +93,15 @@
   "footer": {
     "socials": {
       "github": "https://github.com/lemed99/nightowl-agent",
-      "discord": "https://discord.gg/379qwFtk",
-      "email": "mailto:support@usenightowl.com"
-    }
+      "discord": "https://discord.gg/379qwFtk"
+    },
+    "links": [
+      {
+        "header": "Contact",
+        "items": [
+          { "label": "support@usenightowl.com", "href": "mailto:support@usenightowl.com" }
+        ]
+      }
+    ]
   }
 }
