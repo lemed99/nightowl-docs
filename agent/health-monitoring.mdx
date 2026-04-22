@@ -42,7 +42,7 @@ In the dashboard, open your app and click **Health** in the sidebar. The page po
     Drain rate has been zero for longer than one minute while ingest is non-zero. Almost always a PostgreSQL connection issue — verify credentials, PgBouncer, and `max_connections`.
   </Accordion>
   <Accordion title="No recent payloads">
-    Ingest rate has been zero for 5+ minutes. Your application may not be sending. Confirm `NIGHTWATCH_TOKEN` is set to the token from the NightOwl dashboard and that the Nightwatch package is installed and booted.
+    Ingest rate has been zero for 5+ minutes. Your application may not be sending. Confirm `NIGHTWATCH_TOKEN` in the customer app's `.env` matches the token shown in the dashboard's Settings → Agent token, and that the `laravel/nightwatch` package is installed and booted. (In [parallel mode](/agent/migration-from-nightwatch) the agent verifies against `NIGHTOWL_TOKEN` instead.)
   </Accordion>
 </AccordionGroup>
 
@@ -55,4 +55,9 @@ In the dashboard, open your app and click **Health** in the sidebar. The page po
 
 ## Raw metrics for external monitoring
 
-The agent also writes a JSON metrics file at `storage/nightowl/agent-buffer.sqlite.drain-metrics.json`. Point Prometheus, Datadog, or a cron-scraped shell script at it if you want alerts that live outside the dashboard.
+The agent writes a JSON metrics file next to the SQLite buffer for Prometheus, Datadog, or a cron-scraped shell script.
+
+- **Single-worker (default)** — `storage/nightowl/agent-buffer.sqlite.drain-metrics.json`
+- **Multi-worker (`NIGHTOWL_DRAIN_WORKERS > 1`)** — one file per worker, suffixed with the worker id: `storage/nightowl/agent-buffer.sqlite.drain-metrics-{id}.json`
+
+When you scale horizontally, configure your scraper to glob `*.drain-metrics-*.json` so you don't miss rows from worker 2 onward.

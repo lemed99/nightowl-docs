@@ -1,0 +1,103 @@
+---
+title: Configuration
+description: Every environment variable and artisan command the NightOwl agent exposes.
+---
+
+All configuration lives in `config/nightowl.php` after running `php artisan nightowl:install`. Most values are driven by environment variables — the defaults are tuned for a single-instance deployment doing up to a few thousand requests per second.
+
+## Database connection
+
+| Variable               | Default       | Description                     |
+| ---------------------- | ------------- | ------------------------------- |
+| `NIGHTOWL_DB_HOST`     | `127.0.0.1`   | PostgreSQL host                 |
+| `NIGHTOWL_DB_PORT`     | `5432`        | PostgreSQL port                 |
+| `NIGHTOWL_DB_DATABASE` | `nightowl`    | PostgreSQL database name        |
+| `NIGHTOWL_DB_USERNAME` | `nightowl`    | PostgreSQL username             |
+| `NIGHTOWL_DB_PASSWORD` | `nightowl`    | PostgreSQL password             |
+
+Use the same credentials you entered when creating the app in the dashboard — the hosted UI uses them to read the telemetry your agent wrote.
+
+## Agent runtime
+
+| Variable                    | Default     | Description                                                                |
+| --------------------------- | ----------- | -------------------------------------------------------------------------- |
+| `NIGHTOWL_AGENT_HOST`       | `127.0.0.1` | TCP host the agent binds to (use `0.0.0.0` or an LB VIP for multi-host)    |
+| `NIGHTOWL_AGENT_PORT`       | `2407`      | TCP port the agent listens on                                              |
+| `NIGHTOWL_AGENT_DRIVER`     | `async`     | Server driver (`async` or `sync`). `async` needs `pcntl` + `posix`         |
+| `NIGHTOWL_SO_REUSEPORT`     | `false`     | Allow multiple agents to bind the same port (Linux only)                   |
+| `NIGHTOWL_ENVIRONMENT`      | `APP_ENV`   | Override `APP_ENV` for the `environment` column stamped on every row       |
+
+See [Running multiple instances](/agent/multiple-instances) for `SO_REUSEPORT`.
+
+## Authentication
+
+| Variable            | Description                                                                                           |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `NIGHTWATCH_TOKEN`  | Agent token copied from the NightOwl dashboard (Settings → Agent token). The `laravel/nightwatch` SDK reads it to sign outbound telemetry; the NightOwl agent reads it to verify inbound payloads. For a standalone install this is the only token you need. |
+| `NIGHTOWL_TOKEN`    | Optional override used only in [parallel mode](/agent/migration-from-nightwatch), when NightOwl runs alongside Nightwatch's hosted agent and each side needs a distinct token. When set, the NightOwl agent uses this for verification instead of `NIGHTWATCH_TOKEN`. Don't set it for a standard install. |
+| `NIGHTOWL_APP_ID`   | Optional connected-app ID (also shown in Settings). When set, webhook alerts embed a direct-link `view_url` and populate `app_id` in the payload — see [alert channels](/dashboard/alert-channels). |
+
+For a standalone install, set `NIGHTWATCH_TOKEN` only. For parallel mode, set both: `NIGHTWATCH_TOKEN` is your Nightwatch token (what the SDK signs outbound telemetry with); `NIGHTOWL_TOKEN` is the separate token the NightOwl agent verifies against. Internally the agent reads `NIGHTOWL_TOKEN` when present and falls back to `NIGHTWATCH_TOKEN` otherwise.
+
+## Drain pipeline
+
+| Variable                       | Default     | Description                                                            |
+| ------------------------------ | ----------- | ---------------------------------------------------------------------- |
+| `NIGHTOWL_DRAIN_WORKERS`       | `1`         | Parallel drain worker processes (forked, atomic SQLite row claiming)   |
+| `NIGHTOWL_DRAIN_BATCH_SIZE`    | `5000`      | Rows per PostgreSQL `COPY` batch                                       |
+| `NIGHTOWL_DRAIN_INTERVAL_MS`   | `100`       | Drain loop sleep interval when the buffer is idle                      |
+| `NIGHTOWL_MAX_PENDING_ROWS`    | `100000`    | Reject new payloads once the buffer hits this depth                    |
+| `NIGHTOWL_MAX_BUFFER_MEMORY`   | `268435456` | RSS ceiling (bytes) before back-pressure kicks in (default 256 MB)     |
+
+See [throughput tuning](/performance/throughput) for how to size these.
+
+## Sampling
+
+Exceptions and 5xx requests are always kept regardless of sample rate. When an entry point is sampled in, the entire trace (queries, cache, logs, etc.) is captured.
+
+| Variable                              | Default | Description                                   |
+| ------------------------------------- | ------- | --------------------------------------------- |
+| `NIGHTOWL_SAMPLE_RATE`                | `1.0`   | Global sampling rate (1.0 = keep all)         |
+| `NIGHTOWL_REQUEST_SAMPLE_RATE`        | —       | Override sample rate for HTTP requests        |
+| `NIGHTOWL_COMMAND_SAMPLE_RATE`        | —       | Override sample rate for artisan commands     |
+| `NIGHTOWL_SCHEDULED_TASK_SAMPLE_RATE` | —       | Override sample rate for scheduled tasks      |
+
+See [Filtering and context](/agent/filtering-and-context) for the full recipe.
+
+## Redaction
+
+| Variable                    | Default                                                 | Description                                                                 |
+| --------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `NIGHTOWL_REDACT_ENABLED`   | `true`                                                  | Redact sensitive keys from payloads before writing                          |
+| `NIGHTOWL_REDACT_KEYS`      | `password,token,authorization,cookie,secret,api_key`    | Comma-separated key names to redact. Matched case-insensitively. Overriding this replaces the full list — include `password`, `token`, etc. if you still want them scrubbed. |
+
+Redaction is enabled by default. Query-string parameters with these names are also scrubbed from any `url` / `uri` / `endpoint` / `href` field inside the payload. To capture raw credentials in telemetry for debugging (not recommended), set `NIGHTOWL_REDACT_ENABLED=false`.
+
+## Retention and caching
+
+| Variable                          | Default  | Description                                                                            |
+| --------------------------------- | -------- | -------------------------------------------------------------------------------------- |
+| `NIGHTOWL_RETENTION_DAYS`         | `14`     | Default for `nightowl:prune --days=?` — nothing is deleted until the command is run    |
+| `NIGHTOWL_THRESHOLD_CACHE_TTL`    | `86400`  | Seconds to cache performance thresholds (restart to pick up changes immediately)       |
+
+Full retention and pruning strategy lives in [Data management](/dashboard/data-management).
+
+## Parallel mode
+
+| Variable                            | Default | Description                                                    |
+| ----------------------------------- | ------- | -------------------------------------------------------------- |
+| `NIGHTOWL_PARALLEL_WITH_NIGHTWATCH` | `false` | Fan telemetry out to both Nightwatch and NightOwl simultaneously |
+
+See [Running alongside Nightwatch](/agent/migration-from-nightwatch).
+
+## Artisan commands
+
+| Command                      | Description                                         |
+| ---------------------------- | --------------------------------------------------- |
+| `nightowl:agent`             | Start the monitoring agent                          |
+| `nightowl:install`           | Publish config and run migrations                   |
+| `nightowl:prune`             | Delete monitoring data older than retention period  |
+| `nightowl:clear`             | Truncate all monitoring tables                      |
+| `nightowl:check-thresholds`  | Poll and dispatch threshold-breach notifications    |
+
+The agent command accepts `--driver=async|sync`. `async` is the default and required for multi-worker drain; `sync` is a single-process fallback for hosts without `pcntl`/`posix`.

@@ -70,10 +70,10 @@ A rough budget for capacity planning:
 | Component        | Per-instance capacity |
 | ---------------- | --------------------- |
 | Ingest (TCP)     | ~13,400 payloads/s    |
-| Drain (1 worker) | ~3,000 rows/s (COPY)  |
+| Drain (1 worker) | ~5,600 rows/s (COPY)  |
 | SQLite buffer    | 100,000 rows max      |
 
-If your app sends 40,000 payloads/s at peak, you need at least three agents and enough drain workers in aggregate to sustain 40,000 rows/s — roughly 14 workers, spread across the three instances, backed by a PostgreSQL instance that can keep up.
+If your app sends 40,000 payloads/s at peak, you need at least three agents and enough drain workers in aggregate to sustain 40,000 rows/s — roughly 8 workers, spread across the three instances, backed by a PostgreSQL instance that can keep up.
 
 ## Verifying the fan-out
 

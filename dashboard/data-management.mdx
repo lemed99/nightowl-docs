@@ -18,40 +18,52 @@ Because the data lives in *your* PostgreSQL, you can:
 
 ## Retention
 
-Telemetry is high-volume and low-shelf-life. The default retention tier is 7 days for event tables and 30 days for issue fingerprints, which is usually enough for debugging but avoids letting the database grow unbounded.
+Telemetry is high-volume and low-shelf-life. The agent ships with a single global retention window — **14 days** by default — applied uniformly to every event table it prunes. Set it in the customer app's environment:
 
-Configure retention per app in **Settings → Data Management**:
+```env
+NIGHTOWL_RETENTION_DAYS=14
+```
 
-| Table group            | What it holds                                          | Typical retention |
-| ---------------------- | ------------------------------------------------------ | ----------------- |
-| Requests / jobs / etc. | One row per event. High-volume, short-lived.           | 3–14 days         |
-| Exceptions             | Fingerprint-grouped. Low-volume, long-lived.           | 30–90 days        |
-| Issues / activity      | Triage state — status, priority, comments, timeline.   | Indefinite        |
-| Alert history          | Record of each fired alert for audit.                  | 30 days           |
+What the prune command deletes, and what it leaves alone:
 
-Issue records themselves are never auto-pruned — resolving an issue doesn't delete its history. Only the raw occurrence rows are subject to retention.
+| Tables                                                                                                                                                                                                                                                                                                                                 | Behavior                                                       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `nightowl_requests`, `nightowl_queries`, `nightowl_exceptions`, `nightowl_commands`, `nightowl_jobs`, `nightowl_cache_events`, `nightowl_mail`, `nightowl_notifications`, `nightowl_outgoing_requests`, `nightowl_scheduled_tasks`, `nightowl_logs`, `nightowl_alerts` | Rows older than `NIGHTOWL_RETENTION_DAYS` are deleted.         |
+| `nightowl_issues`, `nightowl_issue_activity`, `nightowl_issue_comments`                                                                                                                                                                                                                                                                | Never auto-pruned. Triage state survives occurrence cleanup.   |
+| `nightowl_settings`, `nightowl_alert_channels`, `nightowl_users`                                                                                                                                                                                                                                                                       | Configuration and user identity — never auto-pruned.           |
+
+Resolving an issue doesn't delete its history. Only the raw occurrence rows feeding the fingerprint are subject to retention.
 
 ## Pruning
 
-The `nightowl:prune` artisan command deletes rows older than the configured retention for each table. Schedule it alongside your other Laravel scheduled tasks:
+The `nightowl:prune` artisan command deletes rows older than `NIGHTOWL_RETENTION_DAYS` (or `--days=N` to override for one run). Schedule it alongside your other Laravel scheduled tasks:
 
 ```php
 // app/Console/Kernel.php
 $schedule->command('nightowl:prune')->hourly();
 ```
 
-Pruning uses batched `DELETE … WHERE created_at < ?` with `LIMIT` to avoid long-running transactions on large tables. On PostgreSQL, follow up occasionally with `VACUUM (ANALYZE)` to reclaim disk — the command doesn't do this automatically because it may compete with production workload.
+The command issues one `DELETE … WHERE created_at < ?` per table. On PostgreSQL, follow up occasionally with `VACUUM (ANALYZE)` to reclaim disk — the command doesn't do this automatically because it may compete with production workload.
 
 ## Manual cleanup and resets
 
-From **Settings → Danger Zone**:
+### Selective delete (Data Management)
 
-- **Prune now** — runs the retention-based prune immediately rather than waiting for the next scheduled run.
-- **Wipe telemetry** — truncates all event tables but keeps issues, settings, alert channels, and team membership. Useful after a staging incident generated noise you want out of your dashboard.
-- **Delete app** — tears down the app record on NightOwl's side. *Does not* drop your `nightowl_*` tables — that's your database, and we won't touch it.
+The **Data Management** page in the sidebar lets you delete telemetry for a specific date range, narrowed by table and filter. Use it to clear out noise from a staging incident, a runaway log level, or a single bad deploy without waiting for retention to catch up.
+
+1. Pick a **From / To** date range. The `To` date must be at least 30 days in the past — the endpoint rejects anything newer to prevent accidental deletion of live data.
+2. Select which tables to include. By default all 12 event tables are selected (`nightowl_requests`, `nightowl_queries`, `nightowl_exceptions`, `nightowl_commands`, `nightowl_jobs`, `nightowl_cache_events`, `nightowl_mail`, `nightowl_notifications`, `nightowl_outgoing_requests`, `nightowl_scheduled_tasks`, `nightowl_logs`, `nightowl_alerts`).
+3. Optionally narrow by route path, status code, duration, user, job status, log level, exception class, or cache event type. Filters only apply to tables where the column exists.
+4. **Preview** shows counts per table before you commit. Deletion is then chunked in 10,000-row batches. After the deletion, any `nightowl_issues` row of `type = 'exception'` whose fingerprint no longer has a matching row in `nightowl_exceptions` is cleaned up automatically; performance issues are not touched by this sweep.
+
+Issue triage state, settings, alert channels, and user identity rows are never touched by this flow.
+
+### Delete app (Danger Zone)
+
+From **Settings → Danger Zone**, **Delete app** removes the app from NightOwl along with its agent token and alert routing. *Does not* drop or truncate your `nightowl_*` tables — that's your database, and we won't touch it. If you want the telemetry gone too, use Data Management for a targeted range or run `php artisan nightowl:clear` in the customer app for a full truncate.
 
 <Warning>
-  Wipe telemetry is irreversible. There's no soft-delete. Take a PostgreSQL backup first if the data has any archival value.
+  Data Management deletions are irreversible — there's no soft-delete. Take a PostgreSQL backup first if the data has any archival value.
 </Warning>
 
 ## Backups
@@ -70,7 +82,7 @@ As a rough baseline for capacity planning:
 | Medium app (~1,000 req/s)        | ~86M                | ~5 GB                      |
 | Large app (~10,000 req/s)        | ~860M               | ~50 GB                     |
 
-At 7-day retention these multiply by 7. See [PostgreSQL sizing](/performance/postgresql-sizing) for disk, memory, and vCPU guidance.
+At the default 14-day retention these multiply by 14. See [PostgreSQL sizing](/performance/postgresql-sizing) for disk, memory, and vCPU guidance.
 
 ## Exporting data
 

@@ -24,6 +24,9 @@
           {
             "group": "Agent",
             "pages": [
+              "agent/configuration",
+              "agent/filtering-and-context",
+              "agent/production-deployment",
               "agent/migration-from-nightwatch",
               "agent/multiple-instances",
               "agent/health-monitoring"
@@ -89,7 +92,9 @@
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/lemed99/nightowl-agent"
+      "github": "https://github.com/lemed99/nightowl-agent",
+      "discord": "https://discord.gg/379qwFtk",
+      "email": "mailto:support@usenightowl.com"
     }
   }
 }

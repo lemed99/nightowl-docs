@@ -1,0 +1,103 @@
+---
+title: Filtering and Context
+description: Control what the agent captures with sampling, in-code filters, custom context metadata, and redaction.
+---
+
+The NightOwl agent receives whatever Nightwatch sends. That means all of Nightwatch's filtering primitives work out of the box — plus a redaction layer applied by the agent before rows hit PostgreSQL.
+
+## Sampling
+
+Control how much data is collected per entry-point type. Exceptions and 5xx requests are **always kept** regardless of sample rate — when something breaks, you'll see it.
+
+```env
+NIGHTOWL_REQUEST_SAMPLE_RATE=0.1         # Keep ~10% of HTTP requests
+NIGHTOWL_COMMAND_SAMPLE_RATE=1.0         # Keep all artisan commands
+NIGHTOWL_SCHEDULED_TASK_SAMPLE_RATE=1.0  # Keep all scheduled tasks
+```
+
+When an entry point is sampled *in*, the entire trace — queries, cache events, logs, outgoing requests — is captured. Sampling happens at the trace boundary, not per-record, so you never end up with half a request.
+
+For a global knob, use `NIGHTOWL_SAMPLE_RATE=0.25` and let the per-type overrides specialize. See the [throughput guide](/performance/throughput) for how to pick a rate.
+
+## In-code filtering
+
+Use Nightwatch's filtering API to exclude specific events inline:
+
+```php
+use Laravel\Nightwatch\Facades\Nightwatch;
+
+Nightwatch::ignore(function () {
+    // queries, jobs, cache events inside this callback
+    // will not be recorded
+    User::chunk(1000, fn ($chunk) => $chunk->each(...));
+});
+```
+
+For finer control, pause and resume around a block:
+
+```php
+Nightwatch::pause();
+
+// ... unmonitored code ...
+
+Nightwatch::resume();
+```
+
+Useful for health-check endpoints, internal admin batch operations, or hot paths you don't want to sample but also don't want to pay for.
+
+## Context metadata
+
+Attach custom key-value data to traces using Laravel's `Context` facade (Laravel 11+):
+
+```php
+use Illuminate\Support\Facades\Context;
+
+Context::add('user_role', $user->role);
+Context::add('feature_flags', ['new-checkout' => true]);
+Context::add('tenant', ['id' => $tenant->id, 'plan' => 'pro']);
+```
+
+Context data is captured by Nightwatch, stored by the agent alongside the request row, and shown in the request detail page as a collapsible JSON tree. The agent's per-connection payload ceiling is 10 MB (`MAX_PAYLOAD_BYTES`) — oversized payloads are rejected with `5:ERROR`, not silently truncated — so keep context entries small and structured rather than pushing large blobs through the tracer.
+
+Good things to stash in context:
+
+- Tenant / workspace / organization ID.
+- Feature flag decisions that affected this request.
+- User role or permission set.
+- Deploy-specific debugging flags you set temporarily during an incident.
+
+Don't stash secrets — `Context` entries are not run through the redactor.
+
+## Redaction
+
+For secrets that might end up in request bodies, query strings, or exception context, enable the agent's redactor. It scrubs keys before rows reach PostgreSQL:
+
+```env
+NIGHTOWL_REDACT_ENABLED=true
+NIGHTOWL_REDACT_KEYS=password,token,authorization,cookie,secret,api_key
+```
+
+What it does:
+
+- **Matches keys case-insensitively** at any depth in the payload JSON.
+- **Redacts URL query-string params** whose key matches one of the redact keys, inside fields named `url`, `uri`, `endpoint`, or `href`.
+- Replaces the value with `[REDACTED]` — the key stays so downstream analysis knows the field existed.
+
+The redactor is O(1) per key (hash-set lookup), so the cost is linear in the payload size and negligible on the hot path.
+
+## Combining the layers
+
+A common production config looks like:
+
+```env
+# Collect everything important, drop most read traffic
+NIGHTOWL_REQUEST_SAMPLE_RATE=0.1
+NIGHTOWL_COMMAND_SAMPLE_RATE=1.0
+NIGHTOWL_SCHEDULED_TASK_SAMPLE_RATE=1.0
+
+# Never ship secrets to the DB
+NIGHTOWL_REDACT_ENABLED=true
+NIGHTOWL_REDACT_KEYS=password,token,authorization,cookie,secret,api_key,access_token,refresh_token
+```
+
+Combined with `Nightwatch::ignore()` around health-check endpoints and `Context::add()` for tenant IDs, you get a dataset that's lean, safe to store, and actually queryable.

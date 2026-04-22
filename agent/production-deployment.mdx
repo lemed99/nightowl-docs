@@ -1,0 +1,126 @@
+---
+title: Production Deployment
+description: Run the NightOwl agent under a process supervisor — Supervisor or systemd recipes.
+---
+
+The NightOwl agent is a long-running process. Don't leave it in the foreground of an SSH session — hand it to a supervisor so it restarts on crash and survives reboots.
+
+## Buffer directory
+
+Before starting the agent, ensure the local SQLite buffer directory exists and is writable by the process user:
+
+```bash
+mkdir -p storage/nightowl && chmod 775 storage/nightowl
+```
+
+<Note>
+  Inside a Docker container the buffer directory is required at container start — bake it into your image or mount a persistent volume so buffered telemetry survives restarts.
+</Note>
+
+## Supervisor
+
+Recommended for most deployments — works out of the box on Ubuntu/Debian/RHEL, integrates with Laravel Forge and most PaaS runners.
+
+```ini
+[program:nightowl-agent]
+command=php /path/to/your/app/artisan nightowl:agent
+autostart=true
+autorestart=true
+user=www-data
+redirect_stderr=true
+stdout_logfile=/var/log/nightowl-agent.log
+stopwaitsecs=30
+```
+
+Reload with:
+
+```bash
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl start nightowl-agent
+```
+
+`stopwaitsecs=30` gives the agent time to flush pending rows out of SQLite into PostgreSQL before SIGKILL. If you drain heavy volume, bump it to 60.
+
+## systemd
+
+Use this on stock Linux without Supervisor (or when you already manage app services with systemd).
+
+```ini
+[Unit]
+Description=NightOwl Agent
+After=network.target postgresql.service
+
+[Service]
+User=www-data
+WorkingDirectory=/path/to/your/app
+ExecStart=/usr/bin/php artisan nightowl:agent
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Save as `/etc/systemd/system/nightowl-agent.service`, then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable nightowl-agent
+sudo systemctl start nightowl-agent
+sudo systemctl status nightowl-agent
+```
+
+## Docker
+
+Run the agent as its own container (separate from your web container). Share the app code and the `storage/nightowl` volume:
+
+```yaml
+services:
+  app:
+    # ... your existing app service
+    volumes:
+      - ./:/var/www/html
+      - nightowl-buffer:/var/www/html/storage/nightowl
+
+  nightowl-agent:
+    image: your-app-image
+    command: php artisan nightowl:agent
+    restart: unless-stopped
+    volumes:
+      - ./:/var/www/html
+      - nightowl-buffer:/var/www/html/storage/nightowl
+    environment:
+      NIGHTWATCH_TOKEN: ${NIGHTWATCH_TOKEN}
+      NIGHTOWL_DB_HOST: postgres
+      # ... other NIGHTOWL_* env
+    depends_on:
+      - postgres
+
+volumes:
+  nightowl-buffer:
+```
+
+Putting the agent in its own container keeps ingest throughput independent of your PHP-FPM worker count, and lets you scale drain workers without touching the web tier.
+
+## Graceful shutdown
+
+On `SIGTERM` the agent:
+
+1. Stops accepting new TCP/UDP payloads.
+2. Flushes any in-memory batches to SQLite.
+3. Waits up to 30 seconds for drain workers to finish their current `COPY` batch.
+4. Closes the PostgreSQL connection cleanly.
+
+Because all data passes through the SQLite WAL buffer before PostgreSQL, a hard kill won't lose telemetry — it'll just resume draining on the next start.
+
+## Health checks
+
+The async driver exposes a health endpoint on `NIGHTOWL_HEALTH_PORT` (default `2409`):
+
+```bash
+curl http://127.0.0.1:2409/status
+```
+
+Returns ingest/drain rates, buffer depth, and active diagnosis rules. Wire this into your existing health-check infrastructure (Kubernetes liveness probe, Consul check, uptime monitor) so a stalled agent pages you before the buffer fills up. See [Health monitoring](/agent/health-monitoring) for the fields and what to alert on.

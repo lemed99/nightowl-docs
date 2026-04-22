@@ -44,9 +44,8 @@ Tick the checkbox on multiple rows to reveal the bulk toolbar. Available actions
 - Resolve selected
 - Ignore selected
 - Reopen selected
-- Assign selected (to a teammate)
 
-Useful when you ship a fix that knocks out a cluster of related exceptions, or when you want to sweep stale issues before a release.
+Useful when you ship a fix that knocks out a cluster of related exceptions, or when you want to sweep stale issues before a release. Bulk assignment isn't supported today — assign one issue at a time from the Assigned column or the detail sidebar.
 
 ## Assignments and comments
 
@@ -56,9 +55,11 @@ Useful when you ship a fix that knocks out a cluster of related exceptions, or w
 
 ## Alerts
 
-When an issue transitions to `open` — either because it's brand new or because a resolved issue reoccurred — every enabled [alert channel](/dashboard/alert-channels) fires once. NightOwl does *not* re-alert on every occurrence; only on status changes. That keeps Slack quiet during incident storms.
+Alert channels fire on the four lifecycle events documented in [Alert channels → What fires an alert](/dashboard/alert-channels): `issue.new` (brand-new fingerprint, or a previously resolved fingerprint reoccurring), plus `issue.resolved` / `issue.ignored` / `issue.reopened` on user triage actions.
 
-Reopening a resolved issue because of a new occurrence requires the fingerprint to land *after* the resolve timestamp. This protects against late-arriving telemetry flipping a freshly-resolved issue back to open.
+Individual occurrences within an already-`open` or already-`ignored` issue never re-alert — they bump counters silently. That keeps Slack quiet during incident storms and keeps "ignored" meaningful.
+
+Note: when a resolved issue's fingerprint reoccurs, an `issue.new` alert fires but the row's `status` stays `resolved` in the dashboard — NightOwl doesn't auto-reopen resolved issues from telemetry alone. To fully reopen, click **Reopen** on the issue (or set `status = open` via API/MCP), which fires `issue.reopened`.
 
 ## Auto-resolve stale issues
 

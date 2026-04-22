@@ -15,7 +15,7 @@ In the dashboard, open your app and go to **Settings → Alert Channels → New 
 | Port        | 465 for SSL, 587 for TLS, 25 for unauthenticated (rarely used today). |
 | Username    | Usually your full email address or an API-key username.               |
 | Password    | SMTP password or app-specific password. Encrypted at rest.            |
-| Encryption  | `tls` (STARTTLS on 587) or `ssl` (SMTPS on 465).                      |
+| Encryption  | `tls` (STARTTLS on 587), `ssl` (SMTPS on 465), or `none` (port 25 or a local relay with no TLS — rarely used). |
 | From address| The `From:` header on the alert email. Must be an address the provider lets you send as. |
 
 After saving, use **Send test** to fire a synthetic alert. A successful test confirms the credentials and DNS/SPF/DKIM setup work end-to-end.

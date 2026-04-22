@@ -53,8 +53,14 @@ Go to [usenightowl.com](https://usenightowl.com) and select your app. You should
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Full agent documentation" icon="github" href="https://github.com/lemed99/nightowl-agent#readme">
-    Every environment variable, sampling, redaction, supervisord/systemd recipes, and testing setup.
+  <Card title="Agent configuration" icon="sliders" href="/agent/configuration">
+    Every environment variable, artisan command, and tuning knob — one reference page.
+  </Card>
+  <Card title="Production deployment" icon="server" href="/agent/production-deployment">
+    Supervisor, systemd, and Docker recipes for running the agent under a process manager.
+  </Card>
+  <Card title="Filtering and context" icon="filter" href="/agent/filtering-and-context">
+    Sampling, `Nightwatch::ignore()`, `Context::add()`, and redaction — trim and enrich the dataset.
   </Card>
   <Card title="Health monitoring" icon="heart-pulse" href="/agent/health-monitoring">
     Read ingest rate, drain rate, and buffer depth — and know when to scale.

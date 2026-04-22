@@ -20,7 +20,7 @@ NightOwl exposes two MCP endpoints. You'll usually register both.
 | **Platform** | `/mcp/platform` | Your account + every team you belong to | Provisioning apps, inviting teammates, rotating agent tokens, inspecting agent health |
 | **Tenant** | `/mcp/<app-id>` | A single connected app's telemetry | Triage issues, browse requests / exceptions / queries / jobs / logs, configure alert channels, manage data retention |
 
-The platform server has **25 tools**; the tenant server has **56**. Full coverage of the dashboard's CRUD surface.
+The platform server has **25 tools**; the tenant server has **53**. Full coverage of the dashboard's CRUD surface.
 
 ## 3. Connect your client
 
@@ -107,7 +107,7 @@ Bearer-token HTTP MCP isn't native in these clients yet — use the `mcp-remote`
 | **Telemetry** | `list_requests`/`get_request`/`get_route_detail`, `list_exceptions`/`get_exception`, `list_queries`/`get_query`, `list_jobs`/`get_job`/`get_job_attempt`, `list_commands`/`get_command`/`get_command_attempt`, `list_scheduled_tasks`/`get_scheduled_task`/`get_scheduled_task_attempt`, `list_cache_events`, `list_logs`/`get_log`, `list_mail`/`get_mail`, `list_notifications`/`get_notification`, `list_outgoing_requests`/`get_outgoing_request`, `list_users`/`get_user` |
 | **Alerts** | `list_alerts`, `mark_alert_read`, `mark_all_alerts_read` |
 | **Alert channels** | `list_alert_channels`, `create_alert_channel`, `update_alert_channel`, `delete_alert_channel`, `toggle_alert_channel`, `test_alert_channel` |
-| **Settings** | `get_settings`, `update_settings`, `list_environments`, `list_thresholds`, `update_thresholds`, `list_threshold_targets`, `delete_application` ⚠ |
+| **Settings** | `get_settings`, `update_settings`, `list_environments`, `list_thresholds`, `update_thresholds`, `list_threshold_targets` |
 | **Data management** | `filter_options`, `preview_deletion`, `destroy_data` ⚠ |
 
 ⚠ = destructive. These tools require an explicit `confirm: "YES"` argument and cannot be invoked accidentally.
@@ -125,7 +125,7 @@ Bearer-token HTTP MCP isn't native in these clients yet — use the `mcp-remote`
     Deleting a token from Account → MCP Tokens blocks every client using it — no redeploy, no restart.
   </Card>
   <Card title="Confirmation gates" icon="lock">
-    Destructive tools (`delete_app`, `regenerate_app_token`, `destroy_data`, `delete_application`) refuse to execute without `confirm: "YES"`. Dry-run counterparts (`preview_deletion`) are always safe.
+    Destructive tools (`delete_app`, `regenerate_app_token`, `destroy_data`) refuse to execute without `confirm: "YES"`. Dry-run counterparts (`preview_deletion`) are always safe.
   </Card>
   <Card title="Webhook parity" icon="webhook">
     Status changes made via MCP fire the same Slack, Discord, email, and webhook channels that a human edit would.

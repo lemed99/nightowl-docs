@@ -7,13 +7,16 @@ Alert channels decide *where* NightOwl tells you something needs attention. They
 
 ## What fires an alert
 
-Alerts are issue-state-driven, not occurrence-driven:
+Alerts are issue-lifecycle events, not per-occurrence:
 
-- A new issue opens (first time the fingerprint is seen).
-- A resolved issue reoccurs (same fingerprint, new occurrence after the resolve timestamp).
-- A performance issue opens because a route crossed its p95 threshold.
+| Event            | When it fires                                                                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `issue.new`      | A brand-new fingerprint is seen for the first time, **or** a previously resolved issue reoccurs (a new occurrence after it was resolved). Emitted directly from the agent's drain worker. |
+| `issue.reopened` | A user manually reopens an ignored or resolved issue from the dashboard, MCP, or API.                                                  |
+| `issue.resolved` | A user resolves the issue from the dashboard, MCP, or API.                                                                             |
+| `issue.ignored`  | A user ignores the issue from the dashboard, MCP, or API.                                                                              |
 
-Individual exceptions *within* an already-open issue do not re-alert. This keeps incident storms from flooding every channel.
+Individual exceptions *within* an already-open or already-ignored issue bump the occurrence count silently — they don't re-alert. This keeps incident storms from flooding every channel, and keeps "ignored" meaningful (ignoring an issue permanently silences future occurrences, not just the one in front of you). Only a user-initiated `status = open` round-trip via the dashboard/MCP/API fires `issue.reopened`.
 
 ## The four channel types
 
@@ -40,7 +43,7 @@ Email is BYOD — *bring your own deliverability*. NightOwl never sends from a s
 
 Required fields: SMTP host, port, username, password, encryption (TLS/SSL/none), from address, from name. The password is encrypted in the database via `Crypt` and decrypted only in-memory when dispatching.
 
-Recipients are specified as a comma-separated list in the channel config. For team-wide alerts, use a distribution list (`engineering@…`) rather than listing individuals.
+Recipients must be existing team members of the app — the dashboard rejects addresses that aren't in the team. If you need to notify an external address (an on-call alias, a PagerDuty email trigger, a Slack email relay), add that address as an invited team member first, or route through a Slack/Discord/webhook channel instead.
 
 ## Slack
 
@@ -59,37 +62,67 @@ Discord supports embeds, so the alert renders with a colored side bar (red for e
 
 ## Webhook
 
-For anything more custom — routing to PagerDuty, OpsGenie, a bespoke router, or your own incident bot — use a webhook channel. The payload shape:
+For anything more custom — routing to PagerDuty, OpsGenie, a bespoke router, or your own incident bot — use a webhook channel. Every request is `POST application/json` with this shape:
 
 ```json
 {
-  "event": "issue.opened",
+  "event": "issue.new",
+  "app": "shop-api",
+  "app_id": "2a3b...",
+  "view_url": "https://app.usenightowl.com/dashboard/2a3b.../issues/4812",
   "issue": {
-    "id": 4812,
+    "issue_id": 4812,
     "type": "exception",
     "title": "TypeError: Cannot read properties of null",
+    "message": "Cannot read properties of null (reading 'id')",
+    "status": "open",
+    "priority": null,
+    "first_seen_at": "2026-04-14 09:12:33",
+    "last_seen_at": "2026-04-21 12:45:02",
+    "occurrences": 18,
+    "users": 3,
+    "handled": false,
     "environment": "production",
-    "priority": "high",
-    "url": "https://usenightowl.com/dashboard/abc123/issues/4812"
+    "location": "app/Http/Controllers/OrderController.php:142",
+    "php_version": "8.3.4",
+    "laravel_version": "12.4.0",
+    "subtype": null,
+    "route": null,
+    "action": null,
+    "threshold_ms": null,
+    "duration_ms": null
   },
-  "app": { "id": "abc123", "name": "shop-api" },
-  "occurrence": { "count_24h": 18, "first_seen": "2026-04-14T09:12:33Z" }
+  "timestamp": "2026-04-21T12:45:02+00:00"
 }
 ```
 
-If you set a **signing secret** on the channel, NightOwl signs each request with HMAC-SHA256 over the raw body:
+Every key is always present; unused fields are `null`. Notes:
+
+- `app_id` and `view_url` are best-effort. User-triggered events (`issue.resolved` / `ignored` / `reopened`) populate both whenever the backend has a `frontend_url` configured. Agent-emitted `issue.new` events populate `app_id` only when `NIGHTOWL_APP_ID` is set in the customer app's environment, and `view_url` only when both `NIGHTOWL_APP_ID` and a Laravel `config('app.frontend_url')` are set (otherwise `view_url` falls back to a generic `/dashboard` link or `null`). See [agent configuration](/agent/configuration).
+- `message` is truncated to 200 characters with an ellipsis.
+- **Exception events** populate `handled`, `location`, `php_version`, `laravel_version`. **Performance events** populate `route`, `threshold_ms`, `duration_ms`, and use `subtype` to distinguish `route` / `job` / `command` / `query` / etc. The unused set is `null`.
+- `status` and `priority` reflect the row's current dashboard state at dispatch time. For a brand-new fingerprint, `status` is `"open"` (the DB default) and `priority` is `null` until a user assigns one. Note: when a previously-resolved issue reoccurs, `issue.new` fires again but the row's `status` stays `"resolved"` — the drain's upsert bumps occurrence/user counts without touching `status`, so receivers should key off `event`, not `status`, to detect a fresh alert.
+- Field `type` is always `"exception"` or `"performance"`.
+
+### Signing
+
+If you set a **signing secret** on the channel, NightOwl signs each request with HMAC-SHA256 over the raw JSON body:
 
 ```
-X-NightOwl-Signature: sha256=<hex-digest>
+X-NightOwl-Signature: <hex-digest>
 ```
 
-Verify by recomputing the digest with your secret and the raw body, then comparing with `hash_equals`. Reject any request whose signature doesn't match — this prevents forged alerts from reaching your downstream system.
+The header value is the raw hex digest — **no `sha256=` prefix**. Verify by recomputing the digest with your secret and the raw body (before any JSON parsing), then comparing with `hash_equals`. Reject any request whose signature doesn't match.
 
 ## Testing a channel
 
-Every channel has a **Send test** button that dispatches a synthetic `issue.opened` alert immediately. Use it after setup and after any credential rotation. The test uses the exact same dispatch path as real alerts, so a successful test guarantees real alerts will reach the same destination.
+Every channel has a **Send test** button. The test payload is deliberately minimal — just enough to prove the transport works — so don't expect it to match the real issue schema:
 
-If a test fails, the dashboard shows the specific error (SMTP auth failure, 4xx response from a webhook, invalid Slack URL) rather than a generic message.
+- **Webhook**: `{ "event": "test", "app": "<app name>", "timestamp": "<iso8601>" }`. No `issue` object.
+- **Slack / Discord**: a plain "Test Notification" message in the destination channel.
+- **Email**: a short HTML email with the subject `[<app-name>] NightOwl Test Notification`.
+
+All tests use the same credentials and transport as real alerts, so a successful test guarantees real alerts will reach the same destination. If a test fails, the dashboard surfaces the specific error (SMTP auth failure, 4xx response from a webhook, invalid Slack URL) rather than a generic message.
 
 ## Toggling and disabling
 
@@ -97,4 +130,9 @@ Channels can be disabled without deleting. A disabled channel is skipped by the 
 
 ## Under the hood
 
-Alert dispatch goes through the `ChannelDispatcherFactory` on the backend, which resolves one of four implementations (`EmailDispatcher`, `SlackDispatcher`, `DiscordDispatcher`, `WebhookDispatcher`). The `nightowl:notify-issues` artisan command runs on a schedule, fans out to every enabled channel per app, and tolerates individual channel failures — one broken webhook never blocks Slack from firing.
+Issue alerts come from two places:
+
+- **`issue.new`** — the NightOwl agent's drain worker dispatches directly from the customer app after a new fingerprint is upserted. No round-trip through NightOwl's API.
+- **`issue.resolved` / `issue.ignored` / `issue.reopened`** — the NightOwl API dispatches via a queued `DispatchIssueAlertsJob` whenever a user changes status from the dashboard, MCP, or the API.
+
+Both paths emit the same payload shape, share `X-NightOwl-Signature` signing, and respect per-channel `notify_events` filtering. Dispatch is isolated per channel with a short timeout — one broken webhook never blocks Slack or email from firing.
