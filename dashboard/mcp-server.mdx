@@ -42,32 +42,70 @@ Run `/mcp` in Claude Code to verify both servers connected.
 
 ### Codex
 
+Codex reads MCP servers from `~/.codex/config.toml` and resolves the bearer token from an environment variable. Edit the config:
+
+```toml
+[mcp_servers.nightowl-platform]
+url = "https://api.usenightowl.com/mcp/platform"
+bearer_token_env_var = "NIGHTOWL_MCP_TOKEN"
+
+[mcp_servers.nightowl]
+url = "https://api.usenightowl.com/mcp/<app-id>"
+bearer_token_env_var = "NIGHTOWL_MCP_TOKEN"
+```
+
+Then export the token in your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
+
+```bash
+export NIGHTOWL_MCP_TOKEN="<token>"
+```
+
+Reload the shell (`source ~/.zshrc`) so Codex picks up the variable. Both servers can share the same env var, or use distinct ones if you'd rather scope tokens per server.
+
+If you'd rather not edit `config.toml` by hand, the same registration works via the CLI (token must already be exported):
+
 ```bash
 codex mcp add nightowl-platform \
   --url https://api.usenightowl.com/mcp/platform \
-  --header "Authorization: Bearer <token>"
+  --bearer-token-env-var NIGHTOWL_MCP_TOKEN
 
 codex mcp add nightowl \
   --url https://api.usenightowl.com/mcp/<app-id> \
-  --header "Authorization: Bearer <token>"
+  --bearer-token-env-var NIGHTOWL_MCP_TOKEN
 ```
 
-### Cursor, Windsurf, Zed (via mcp-remote)
+### Cursor
 
-Bearer-token HTTP MCP isn't native in these clients yet — use the `mcp-remote` shim to proxy remote servers as stdio. Add to `.cursor/mcp.json` (or equivalent):
+Cursor speaks bearer-token HTTP MCP natively. Add to `.cursor/mcp.json` (project-scoped) or `~/.cursor/mcp.json` (global):
 
 ```json
 {
   "mcpServers": {
     "nightowl-platform": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://api.usenightowl.com/mcp/platform",
-        "--header",
-        "Authorization: Bearer <token>"
-      ]
+      "url": "https://api.usenightowl.com/mcp/platform",
+      "headers": {
+        "Authorization": "Bearer ${env:NIGHTOWL_MCP_TOKEN}"
+      }
     },
+    "nightowl": {
+      "url": "https://api.usenightowl.com/mcp/<app-id>",
+      "headers": {
+        "Authorization": "Bearer ${env:NIGHTOWL_MCP_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+The `${env:NIGHTOWL_MCP_TOKEN}` reference keeps the raw token out of the file — export it from your shell profile. Cursor reloads the file when you save it.
+
+### Windsurf, Zed, and other stdio-only clients (via mcp-remote)
+
+For clients that don't yet support remote HTTP MCP, the `mcp-remote` shim proxies a remote server as stdio:
+
+```json
+{
+  "mcpServers": {
     "nightowl": {
       "command": "npx",
       "args": [
