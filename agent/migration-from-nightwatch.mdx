@@ -11,6 +11,7 @@ Already using Nightwatch and not ready to fully switch? You can run both agents 
 NIGHTOWL_PARALLEL_WITH_NIGHTWATCH=true
 NIGHTOWL_AGENT_PORT=2410
 NIGHTOWL_TOKEN=your-nightowl-token-from-dashboard
+NIGHTOWL_APP_ID=your-app-id-from-dashboard
 NIGHTWATCH_TOKEN=your-nightwatch-token
 ```
 
@@ -18,6 +19,8 @@ NIGHTWATCH_TOKEN=your-nightwatch-token
   `NIGHTWATCH_TOKEN` is used by the Nightwatch collector to authenticate
   outbound telemetry. `NIGHTOWL_TOKEN` is the token from the NightOwl dashboard
   — the NightOwl agent uses it for payload authentication and health reporting.
+  `NIGHTOWL_APP_ID` is the connected-app ID shown alongside the token; the
+  agent embeds it in alert payloads so issue links resolve to this app.
 </Note>
 
 That's all the configuration needed. The NightOwl agent's service provider detects the flag and wraps Nightwatch's `$core->ingest` so records fan out to both agent ports.

@@ -1,23 +1,24 @@
 ---
 title: Filtering and Context
-description: Control what the agent captures with sampling, in-code filters, custom context metadata, and redaction.
+description: Control what the agent captures with sampling, in-code filters, custom context metadata, and upstream redaction.
 ---
 
-The NightOwl agent receives whatever Nightwatch sends. That means all of Nightwatch's filtering primitives work out of the box — plus a redaction layer applied by the agent before rows hit PostgreSQL.
+The NightOwl agent receives whatever Nightwatch sends. That means all of Nightwatch's filtering and redaction primitives work out of the box — and the agent itself buffers the payload as-received.
 
 ## Sampling
 
-Control how much data is collected per entry-point type. Exceptions and 5xx requests are **always kept** regardless of sample rate — when something breaks, you'll see it.
+Sampling lives in `laravel/nightwatch` and runs inside the customer's PHP process. The trace decision is set at the start of the request and applied at the end — sensors record into the trace either way, but at flush time only sampled-in traces are shipped to the agent. That means the agent only sees and stores what Nightwatch already decided to keep, with no second-pass drop on the agent side.
+
+Configure it in `.env`:
 
 ```env
-NIGHTOWL_REQUEST_SAMPLE_RATE=0.1         # Keep ~10% of HTTP requests
-NIGHTOWL_COMMAND_SAMPLE_RATE=1.0         # Keep all artisan commands
-NIGHTOWL_SCHEDULED_TASK_SAMPLE_RATE=1.0  # Keep all scheduled tasks
+NIGHTWATCH_REQUEST_SAMPLE_RATE=0.1           # Keep ~10% of HTTP requests
+NIGHTWATCH_COMMAND_SAMPLE_RATE=1.0           # Keep all artisan commands
+NIGHTWATCH_EXCEPTION_SAMPLE_RATE=1.0         # Keep all exceptions
+NIGHTWATCH_SCHEDULED_TASK_SAMPLE_RATE=1.0    # Keep all scheduled tasks
 ```
 
-When an entry point is sampled *in*, the entire trace — queries, cache events, logs, outgoing requests — is captured. Sampling happens at the trace boundary, not per-record, so you never end up with half a request.
-
-For a global knob, use `NIGHTOWL_SAMPLE_RATE=0.25` and let the per-type overrides specialize. See the [throughput guide](/performance/throughput) for how to pick a rate.
+When an entry point is sampled *in*, the entire trace — queries, cache events, logs, outgoing requests — is captured. Sampling happens at the trace boundary, not per-record, so you never end up with half a request. Set `NIGHTWATCH_EXCEPTION_SAMPLE_RATE=1.0` to keep every exception regardless of the parent request's sample decision. See the [throughput guide](/performance/throughput) for how to pick a rate.
 
 ## In-code filtering
 
@@ -66,24 +67,20 @@ Good things to stash in context:
 - User role or permission set.
 - Deploy-specific debugging flags you set temporarily during an incident.
 
-Don't stash secrets — `Context` entries are not run through the redactor.
+Don't stash secrets in `Context` — those entries are passed through verbatim.
 
 ## Redaction
 
-For secrets that might end up in request bodies, query strings, or exception context, enable the agent's redactor. It scrubs keys before rows reach PostgreSQL:
+PII redaction lives in `laravel/nightwatch` and runs inside the customer's PHP process before the payload is shipped to the agent. Configure it in `.env`:
 
 ```env
-NIGHTOWL_REDACT_ENABLED=true
-NIGHTOWL_REDACT_KEYS=password,token,authorization,cookie,secret,api_key
+NIGHTWATCH_REDACT_HEADERS=Authorization,Cookie,Proxy-Authorization,X-XSRF-TOKEN
+NIGHTWATCH_REDACT_PAYLOAD_FIELDS=_token,password,password_confirmation
 ```
 
-What it does:
+`NIGHTWATCH_REDACT_HEADERS` strips named headers from every request record. `NIGHTWATCH_REDACT_PAYLOAD_FIELDS` recursively replaces matching keys in the request payload with a `[N bytes redacted]` marker. Both are applied at record-assembly time, so neither the agent's TCP buffer, SQLite WAL, nor PostgreSQL drain ever see the un-redacted values.
 
-- **Matches keys case-insensitively** at any depth in the payload JSON.
-- **Redacts URL query-string params** whose key matches one of the redact keys, inside fields named `url`, `uri`, `endpoint`, or `href`.
-- Replaces the value with `[REDACTED]` — the key stays so downstream analysis knows the field existed.
-
-The redactor is O(1) per key (hash-set lookup), so the cost is linear in the payload size and negligible on the hot path.
+Note: Nightwatch only writes the request `payload` for HTTP 500 responses, and only for `application/json` and form-encoded bodies. Response bodies are never written.
 
 ## Combining the layers
 
@@ -91,13 +88,14 @@ A common production config looks like:
 
 ```env
 # Collect everything important, drop most read traffic
-NIGHTOWL_REQUEST_SAMPLE_RATE=0.1
-NIGHTOWL_COMMAND_SAMPLE_RATE=1.0
-NIGHTOWL_SCHEDULED_TASK_SAMPLE_RATE=1.0
+NIGHTWATCH_REQUEST_SAMPLE_RATE=0.1
+NIGHTWATCH_COMMAND_SAMPLE_RATE=1.0
+NIGHTWATCH_EXCEPTION_SAMPLE_RATE=1.0
+NIGHTWATCH_SCHEDULED_TASK_SAMPLE_RATE=1.0
 
-# Never ship secrets to the DB
-NIGHTOWL_REDACT_ENABLED=true
-NIGHTOWL_REDACT_KEYS=password,token,authorization,cookie,secret,api_key,access_token,refresh_token
+# Strip secrets at the source (Nightwatch)
+NIGHTWATCH_REDACT_HEADERS=Authorization,Cookie,Proxy-Authorization,X-XSRF-TOKEN
+NIGHTWATCH_REDACT_PAYLOAD_FIELDS=_token,password,password_confirmation,api_key,access_token,refresh_token
 ```
 
 Combined with `Nightwatch::ignore()` around health-check endpoints and `Context::add()` for tenant IDs, you get a dataset that's lean, safe to store, and actually queryable.

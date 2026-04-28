@@ -35,7 +35,7 @@ See [Running multiple instances](/agent/multiple-instances) for `SO_REUSEPORT`.
 | ------------------- | ----------------------------------------------------------------------------------------------------- |
 | `NIGHTWATCH_TOKEN`  | Agent token copied from the NightOwl dashboard (Settings → Agent token). The `laravel/nightwatch` SDK reads it to sign outbound telemetry; the NightOwl agent reads it to verify inbound payloads. For a standalone install this is the only token you need. |
 | `NIGHTOWL_TOKEN`    | Optional override used only in [parallel mode](/agent/migration-from-nightwatch), when NightOwl runs alongside Nightwatch's hosted agent and each side needs a distinct token. When set, the NightOwl agent uses this for verification instead of `NIGHTWATCH_TOKEN`. Don't set it for a standard install. |
-| `NIGHTOWL_APP_ID`   | Optional connected-app ID (also shown in Settings). When set, webhook alerts embed a direct-link `view_url` and populate `app_id` in the payload — see [alert channels](/dashboard/alert-channels). |
+| `NIGHTOWL_APP_ID`   | Connected-app ID, copied from the NightOwl dashboard (Settings → Agent token, alongside `NIGHTWATCH_TOKEN`). Required for alert emails and webhooks to include a direct-link `view_url` pointing at the issue. Without it, links fall back to the generic dashboard root. |
 
 For a standalone install, set `NIGHTWATCH_TOKEN` only. For parallel mode, set both: `NIGHTWATCH_TOKEN` is your Nightwatch token (what the SDK signs outbound telemetry with); `NIGHTOWL_TOKEN` is the separate token the NightOwl agent verifies against. Internally the agent reads `NIGHTOWL_TOKEN` when present and falls back to `NIGHTWATCH_TOKEN` otherwise.
 
@@ -53,25 +53,29 @@ See [throughput tuning](/performance/throughput) for how to size these.
 
 ## Sampling
 
-Exceptions and 5xx requests are always kept regardless of sample rate. When an entry point is sampled in, the entire trace (queries, cache, logs, etc.) is captured.
+Sampling is handled upstream by `laravel/nightwatch` before the payload reaches the agent. Configure it in your customer app's `.env`:
 
-| Variable                              | Default | Description                                   |
-| ------------------------------------- | ------- | --------------------------------------------- |
-| `NIGHTOWL_SAMPLE_RATE`                | `1.0`   | Global sampling rate (1.0 = keep all)         |
-| `NIGHTOWL_REQUEST_SAMPLE_RATE`        | —       | Override sample rate for HTTP requests        |
-| `NIGHTOWL_COMMAND_SAMPLE_RATE`        | —       | Override sample rate for artisan commands     |
-| `NIGHTOWL_SCHEDULED_TASK_SAMPLE_RATE` | —       | Override sample rate for scheduled tasks      |
+```env
+NIGHTWATCH_REQUEST_SAMPLE_RATE=0.1                    # Keep ~10% of HTTP requests (1.0 = keep all)
+NIGHTWATCH_COMMAND_SAMPLE_RATE=1.0                    # Keep all artisan commands
+NIGHTWATCH_EXCEPTION_SAMPLE_RATE=1.0                  # Keep all exceptions
+NIGHTWATCH_SCHEDULED_TASK_SAMPLE_RATE=1.0             # Keep all scheduled tasks
+```
+
+The decision is made before transport, so the agent only sees and stores what Nightwatch decided to ship — no double-sampling.
 
 See [Filtering and context](/agent/filtering-and-context) for the full recipe.
 
 ## Redaction
 
-| Variable                    | Default                                                 | Description                                                                 |
-| --------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `NIGHTOWL_REDACT_ENABLED`   | `true`                                                  | Redact sensitive keys from payloads before writing                          |
-| `NIGHTOWL_REDACT_KEYS`      | `password,token,authorization,cookie,secret,api_key`    | Comma-separated key names to redact. Matched case-insensitively. Overriding this replaces the full list — include `password`, `token`, etc. if you still want them scrubbed. |
+PII redaction is handled upstream by `laravel/nightwatch` before the payload reaches the agent. Configure it in your customer app's `.env`:
 
-Redaction is enabled by default. Query-string parameters with these names are also scrubbed from any `url` / `uri` / `endpoint` / `href` field inside the payload. To capture raw credentials in telemetry for debugging (not recommended), set `NIGHTOWL_REDACT_ENABLED=false`.
+```env
+NIGHTWATCH_REDACT_HEADERS=Authorization,Cookie,Proxy-Authorization,X-XSRF-TOKEN
+NIGHTWATCH_REDACT_PAYLOAD_FIELDS=_token,password,password_confirmation
+```
+
+Both lists are applied inside the customer's PHP process before the record leaves the host, so the agent's TCP buffer and PostgreSQL drain never see the un-redacted values.
 
 ## Retention and caching
 

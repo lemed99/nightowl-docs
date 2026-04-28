@@ -93,6 +93,7 @@ services:
       - nightowl-buffer:/var/www/html/storage/nightowl
     environment:
       NIGHTWATCH_TOKEN: ${NIGHTWATCH_TOKEN}
+      NIGHTOWL_APP_ID: ${NIGHTOWL_APP_ID}
       NIGHTOWL_DB_HOST: postgres
       # ... other NIGHTOWL_* env
     depends_on:

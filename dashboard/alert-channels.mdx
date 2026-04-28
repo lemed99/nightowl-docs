@@ -98,7 +98,7 @@ For anything more custom — routing to PagerDuty, OpsGenie, a bespoke router, o
 
 Every key is always present; unused fields are `null`. Notes:
 
-- `app_id` and `view_url` are best-effort. User-triggered events (`issue.resolved` / `ignored` / `reopened`) populate both whenever the backend has a `frontend_url` configured. Agent-emitted `issue.new` events populate `app_id` only when `NIGHTOWL_APP_ID` is set in the customer app's environment, and `view_url` only when both `NIGHTOWL_APP_ID` and a Laravel `config('app.frontend_url')` are set (otherwise `view_url` falls back to a generic `/dashboard` link or `null`). See [agent configuration](/agent/configuration).
+- `app_id` and `view_url` come from the agent's `NIGHTOWL_APP_ID` env var. When set, both fields embed the connected-app ID and a direct link to the issue page. When unset, `app_id` is `null` and `view_url` falls back to the generic `/dashboard` root. See [agent configuration](/agent/configuration).
 - `message` is truncated to 200 characters with an ellipsis.
 - **Exception events** populate `handled`, `location`, `php_version`, `laravel_version`. **Performance events** populate `route`, `threshold_ms`, `duration_ms`, and use `subtype` to distinguish `route` / `job` / `command` / `query` / etc. The unused set is `null`.
 - `status` and `priority` reflect the row's current dashboard state at dispatch time. For a brand-new fingerprint, `status` is `"open"` (the DB default) and `priority` is `null` until a user assigns one. Note: when a previously-resolved issue reoccurs, `issue.new` fires again but the row's `status` stays `"resolved"` — the drain's upsert bumps occurrence/user counts without touching `status`, so receivers should key off `event`, not `status`, to detect a fresh alert.

@@ -5,7 +5,7 @@ description: Get NightOwl running in 5 minutes.
 
 ## 1. Sign up and create your app
 
-Create your NightOwl account at [usenightowl.com/signup](https://usenightowl.com/signup), add your application, and connect your PostgreSQL database. You'll get an agent token to authenticate your instance.
+Create your NightOwl account at [usenightowl.com/signup](https://usenightowl.com/signup), add your application, and connect your PostgreSQL database. After the app is created, the dashboard reveals an agent token and the connected-app ID — copy both, you'll paste them into your `.env` in step 3.
 
 ## 2. Install the agent
 
@@ -21,6 +21,7 @@ Add these to your `.env` file:
 
 ```env
 NIGHTWATCH_TOKEN=your-agent-token
+NIGHTOWL_APP_ID=your-app-id
 NIGHTOWL_DB_HOST=your-pg-host
 NIGHTOWL_DB_PORT=5432
 NIGHTOWL_DB_DATABASE=nightowl
@@ -30,6 +31,8 @@ NIGHTOWL_DB_PASSWORD=your-password
 
 <Note>
   `NIGHTWATCH_TOKEN` is the token you copy from the NightOwl dashboard — the Laravel Nightwatch package reads it to authenticate outgoing telemetry, and the NightOwl agent uses it to authenticate inbound payloads. For a standalone NightOwl setup this is the only token you need.
+
+  `NIGHTOWL_APP_ID` is the connected-app ID, shown alongside the token after you create the app. The agent embeds it in alert payloads so the **View issue** link in emails and webhooks points directly at the issue page. Without it, links fall back to the generic dashboard root.
 
   `NIGHTOWL_TOKEN` is a *separate* variable used only when you're running NightOwl [alongside Nightwatch's hosted agent](/agent/migration-from-nightwatch) and need to distinguish the two tokens. Don't set it for a standard install.
 </Note>
@@ -60,7 +63,7 @@ Go to [usenightowl.com](https://usenightowl.com) and select your app. You should
     Supervisor, systemd, and Docker recipes for running the agent under a process manager.
   </Card>
   <Card title="Filtering and context" icon="filter" href="/agent/filtering-and-context">
-    Sampling, `Nightwatch::ignore()`, `Context::add()`, and redaction — trim and enrich the dataset.
+    `Nightwatch::ignore()`, `Context::add()`, and upstream sampling/redaction — trim and enrich the dataset.
   </Card>
   <Card title="Health monitoring" icon="heart-pulse" href="/agent/health-monitoring">
     Read ingest rate, drain rate, and buffer depth — and know when to scale.
