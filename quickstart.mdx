@@ -20,7 +20,7 @@ composer require nightowl/agent
 Add these to your `.env` file:
 
 ```env
-NIGHTWATCH_TOKEN=your-agent-token
+NIGHTOWL_TOKEN=your-agent-token
 NIGHTOWL_APP_ID=your-app-id
 NIGHTOWL_DB_HOST=your-pg-host
 NIGHTOWL_DB_PORT=5432
@@ -30,11 +30,11 @@ NIGHTOWL_DB_PASSWORD=your-password
 ```
 
 <Note>
-  `NIGHTWATCH_TOKEN` is the token you copy from the NightOwl dashboard — the Laravel Nightwatch package reads it to authenticate outgoing telemetry, and the NightOwl agent uses it to authenticate inbound payloads. For a standalone NightOwl setup this is the only token you need.
+  `NIGHTOWL_TOKEN` is the token you copy from the NightOwl dashboard. The agent uses it to authenticate inbound payloads from `laravel/nightwatch` and to authenticate itself when reporting health to the platform.
 
   `NIGHTOWL_APP_ID` is the connected-app ID, shown alongside the token after you create the app. The agent embeds it in alert payloads so the **View issue** link in emails and webhooks points directly at the issue page. Without it, links fall back to the generic dashboard root.
 
-  `NIGHTOWL_TOKEN` is a *separate* variable used only when you're running NightOwl [alongside Nightwatch's hosted agent](/agent/migration-from-nightwatch) and need to distinguish the two tokens. Don't set it for a standard install.
+  If you're running NightOwl [alongside Nightwatch's hosted agent](/agent/migration-from-nightwatch), you'll also set `NIGHTWATCH_TOKEN` — that's your real Nightwatch token, used by the Nightwatch SDK to reach Laravel Cloud's hosted ingest in parallel.
 </Note>
 
 ## 4. Run the agent

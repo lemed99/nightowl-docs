@@ -42,7 +42,7 @@ In the dashboard, open your app and click **Health** in the sidebar. The page po
     Drain rate has been zero for longer than one minute while ingest is non-zero. Almost always a PostgreSQL connection issue — verify credentials, PgBouncer, and `max_connections`.
   </Accordion>
   <Accordion title="No recent payloads">
-    Ingest rate has been zero for 5+ minutes. Your application may not be sending. Confirm `NIGHTWATCH_TOKEN` in the customer app's `.env` matches the token shown in the dashboard's Settings → Agent token, and that the `laravel/nightwatch` package is installed and booted. (In [parallel mode](/agent/migration-from-nightwatch) the agent verifies against `NIGHTOWL_TOKEN` instead.)
+    Ingest rate has been zero for 5+ minutes. Your application may not be sending. Confirm `NIGHTOWL_TOKEN` in the customer app's `.env` matches the token shown in the dashboard's Settings → Agent token, and that the `laravel/nightwatch` package is installed and booted.
   </Accordion>
 </AccordionGroup>
 
