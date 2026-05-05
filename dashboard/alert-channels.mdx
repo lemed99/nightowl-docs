@@ -11,12 +11,12 @@ Alerts are issue-lifecycle events, not per-occurrence:
 
 | Event            | When it fires                                                                                                                          |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `issue.new`      | A brand-new fingerprint is seen for the first time, **or** a previously resolved issue reoccurs (a new occurrence after it was resolved). Emitted directly from the agent's drain worker. |
-| `issue.reopened` | A user manually reopens an ignored or resolved issue from the dashboard, MCP, or API.                                                  |
+| `issue.new`      | A brand-new fingerprint is seen for the first time. Emitted directly from the agent's drain worker.                                    |
+| `issue.reopened` | A previously resolved issue's fingerprint recurs (auto-reopen by the agent), **or** a user manually reopens an ignored/resolved issue from the dashboard, MCP, or API. The agent flips `status` back to `open` and appends a `status_changed` activity row with `actor_type='agent'`. |
 | `issue.resolved` | A user resolves the issue from the dashboard, MCP, or API.                                                                             |
 | `issue.ignored`  | A user ignores the issue from the dashboard, MCP, or API.                                                                              |
 
-Individual exceptions *within* an already-open or already-ignored issue bump the occurrence count silently — they don't re-alert. This keeps incident storms from flooding every channel, and keeps "ignored" meaningful (ignoring an issue permanently silences future occurrences, not just the one in front of you). Only a user-initiated `status = open` round-trip via the dashboard/MCP/API fires `issue.reopened`.
+Individual exceptions *within* an already-open or already-ignored issue bump the occurrence count silently — they don't re-alert. This keeps incident storms from flooding every channel, and keeps "ignored" meaningful (ignoring an issue permanently silences future occurrences, not just the one in front of you). `resolved` is different: a recurrence is treated as a regression, so the agent auto-flips the status back to `open` and fires `issue.reopened`. Use `NIGHTOWL_REOPEN_COOLDOWN_HOURS` (see [Configuration → Issue lifecycle](/agent/configuration#issue-lifecycle)) to require N hours of silence before the auto-reopen fires — useful for flapping issues.
 
 ## The four channel types
 
@@ -101,7 +101,7 @@ Every key is always present; unused fields are `null`. Notes:
 - `app_id` and `view_url` come from the agent's `NIGHTOWL_APP_ID` env var. When set, both fields embed the connected-app ID and a direct link to the issue page. When unset, `app_id` is `null` and `view_url` falls back to the generic `/dashboard` root. See [agent configuration](/agent/configuration).
 - `message` is truncated to 200 characters with an ellipsis.
 - **Exception events** populate `handled`, `location`, `php_version`, `laravel_version`. **Performance events** populate `route`, `threshold_ms`, `duration_ms`, and use `subtype` to distinguish `route` / `job` / `command` / `query` / etc. The unused set is `null`.
-- `status` and `priority` reflect the row's current dashboard state at dispatch time. For a brand-new fingerprint, `status` is `"open"` (the DB default) and `priority` is `null` until a user assigns one. Note: when a previously-resolved issue reoccurs, `issue.new` fires again but the row's `status` stays `"resolved"` — the drain's upsert bumps occurrence/user counts without touching `status`, so receivers should key off `event`, not `status`, to detect a fresh alert.
+- `status` and `priority` reflect the row's current dashboard state at dispatch time. For a brand-new fingerprint, `status` is `"open"` (the DB default) and `priority` is `null` until a user assigns one. When a previously-resolved issue recurs, the agent flips `status` back to `"open"` before dispatching `issue.reopened`, so receivers see the new state immediately.
 - Field `type` is always `"exception"` or `"performance"`.
 
 ### Signing
@@ -132,7 +132,7 @@ Channels can be disabled without deleting. A disabled channel is skipped by the 
 
 Issue alerts come from two places:
 
-- **`issue.new`** — the NightOwl agent's drain worker dispatches directly from the customer app after a new fingerprint is upserted. No round-trip through NightOwl's API.
-- **`issue.resolved` / `issue.ignored` / `issue.reopened`** — the NightOwl API dispatches via a queued `DispatchIssueAlertsJob` whenever a user changes status from the dashboard, MCP, or the API.
+- **`issue.new` and `issue.reopened` (auto-reopen)** — the NightOwl agent's drain worker dispatches directly from the customer app: `issue.new` after a brand-new fingerprint is upserted, `issue.reopened` after a `resolved` fingerprint recurs (subject to `NIGHTOWL_REOPEN_COOLDOWN_HOURS`). No round-trip through NightOwl's API.
+- **`issue.resolved` / `issue.ignored` / `issue.reopened` (manual)** — the NightOwl API dispatches via a queued `DispatchIssueAlertsJob` whenever a user changes status from the dashboard, MCP, or the API. `issue.reopened` therefore has two emission paths (agent auto-reopen and user-initiated reopen), but the payload shape is identical.
 
 Both paths emit the same payload shape, share `X-NightOwl-Signature` signing, and respect per-channel `notify_events` filtering. Dispatch is isolated per channel with a short timeout — one broken webhook never blocks Slack or email from firing.

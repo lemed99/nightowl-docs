@@ -49,6 +49,12 @@ For a standalone install, set `NIGHTOWL_TOKEN` only. For parallel mode, set both
 | `NIGHTOWL_MAX_PENDING_ROWS`    | `100000`    | Reject new payloads once the buffer hits this depth                    |
 | `NIGHTOWL_MAX_BUFFER_MEMORY`   | `268435456` | RSS ceiling (bytes) before back-pressure kicks in (default 256 MB)     |
 
+## Issue lifecycle
+
+| Variable                          | Default | Description                                                                                                                                       |
+| --------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NIGHTOWL_REOPEN_COOLDOWN_HOURS`  | `0`     | Hours of silence required before a `resolved` issue auto-reopens on recurrence. `0` = always reopen on first new occurrence (Sentry-style behavior). Set higher to suppress flapping issues — e.g. `24` only reopens if the issue has been resolved for at least a day. `ignored` issues are never auto-reopened regardless of this setting. |
+
 See [throughput tuning](/performance/throughput) for how to size these.
 
 ## Sampling

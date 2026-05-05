@@ -22,11 +22,11 @@ Switch between tabs at the top of the Issues page. Filters, bulk actions, and st
 
 An issue is always in one of three states:
 
-| Status      | Meaning                                                                |
-| ----------- | ---------------------------------------------------------------------- |
-| `open`      | Active. Alerts fire and the issue appears in the default list.         |
-| `resolved`  | Fixed. Silenced until the fingerprint reoccurs after the resolve time. |
-| `ignored`   | Noise. Silenced indefinitely — won't reopen automatically.             |
+| Status      | Meaning                                                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `open`      | Active. Alerts fire and the issue appears in the default list.                                                                       |
+| `resolved`  | Fixed. Silent until the fingerprint recurs — at which point the agent auto-reopens it (regression detection) and fires `issue.reopened`. |
+| `ignored`   | Noise. Silenced indefinitely — never auto-reopens, regardless of how often the fingerprint recurs.                                   |
 
 Use **Resolve** for bugs you've deployed a fix for. Use **Ignore** for issues you've deliberately decided not to chase (third-party noise, known false positives, deprecated endpoints).
 
@@ -55,11 +55,11 @@ Useful when you ship a fix that knocks out a cluster of related exceptions, or w
 
 ## Alerts
 
-Alert channels fire on the four lifecycle events documented in [Alert channels → What fires an alert](/dashboard/alert-channels): `issue.new` (brand-new fingerprint, or a previously resolved fingerprint reoccurring), plus `issue.resolved` / `issue.ignored` / `issue.reopened` on user triage actions.
+Alert channels fire on the four lifecycle events documented in [Alert channels → What fires an alert](/dashboard/alert-channels): `issue.new` (brand-new fingerprint), `issue.reopened` (a `resolved` issue's fingerprint recurs — the agent flips it back to `open` automatically), plus `issue.resolved` / `issue.ignored` / `issue.reopened` on user triage actions.
 
-Individual occurrences within an already-`open` or already-`ignored` issue never re-alert — they bump counters silently. That keeps Slack quiet during incident storms and keeps "ignored" meaningful.
+Individual occurrences within an already-`open` or already-`ignored` issue never re-alert — they bump counters silently. That keeps Slack quiet during incident storms and keeps "ignored" meaningful. `resolved` is the exception: a recurrence is treated as a regression, so the agent auto-reopens the issue and fires `issue.reopened`.
 
-Note: when a resolved issue's fingerprint reoccurs, an `issue.new` alert fires but the row's `status` stays `resolved` in the dashboard — NightOwl doesn't auto-reopen resolved issues from telemetry alone. To fully reopen, click **Reopen** on the issue (or set `status = open` via API/MCP), which fires `issue.reopened`.
+To suppress flapping, set `NIGHTOWL_REOPEN_COOLDOWN_HOURS` on the agent (see [Configuration → Issue lifecycle](/agent/configuration#issue-lifecycle)). With a cooldown of `24`, for example, an issue resolved less than 24 hours ago stays silent on recurrence; only after the cooldown elapses does the next recurrence trigger the auto-reopen.
 
 ## Auto-resolve stale issues
 
