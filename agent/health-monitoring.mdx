@@ -53,6 +53,21 @@ In the dashboard, open your app and click **Health** in the sidebar. The page po
 3. **Single-instance ceiling** → run multiple agent instances behind `SO_REUSEPORT`. See [Multiple Instances](/agent/multiple-instances).
 4. **PostgreSQL saturation** → check `pg_stat_activity`, tune `synchronous_commit = off`, or upgrade disk. See [PostgreSQL sizing](/performance/postgresql-sizing).
 
+## Visibility from the host application
+
+When the agent returns `5:ERROR` (back-pressure, token mismatch, malformed payload), the `laravel/nightwatch` SDK in your application drops the current batch and silently swallows the error — no retry, no in-memory buildup, no host crash, but also no log line by default. The dashboard's reject rate chart already shows the picture on the receiving side. To log it from inside the host app, register a handler in `AppServiceProvider::boot()`:
+
+```php
+use Illuminate\Support\Facades\Log;
+use Laravel\Nightwatch\Facades\Nightwatch;
+
+Nightwatch::handleUnrecoverableExceptionsUsing(function (\Throwable $e) {
+    Log::warning('NightOwl telemetry batch dropped', ['error' => $e->getMessage()]);
+});
+```
+
+Pipe to Sentry, Bugsnag, or any logger. The handler slot is single-occupant — if you already register your own elsewhere, only the most recent registration runs.
+
 ## Raw metrics for external monitoring
 
 The agent writes a JSON metrics file next to the SQLite buffer for Prometheus, Datadog, or a cron-scraped shell script.
