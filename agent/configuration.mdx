@@ -18,10 +18,31 @@ All configuration lives in `config/nightowl.php` after running `php artisan nigh
 
 Use the same credentials you entered when creating the app in the dashboard — the hosted UI uses them to read the telemetry your agent wrote.
 
+### Sharing one database across environments
+
+NightOwl stamps an `environment` column on every row, so you can point several app environments (local, staging, production) at **one** NightOwl database and filter by environment in the dashboard.
+
+There's one wrinkle with migrations. NightOwl's tables live in the `nightowl` connection, but Laravel records *migration history* against your app's primary database. Each environment has its own primary database — so each one's `php artisan migrate` sees an empty history and tries to create the `nightowl_*` tables again. The first environment succeeds; the next deploy fails with:
+
+```text
+SQLSTATE[42P07]: Duplicate table: relation "nightowl_requests" already exists
+```
+
+To avoid this, let only one environment own the schema:
+
+1. **Pick one environment to own migrations.** Leave `NIGHTOWL_RUN_MIGRATIONS` at its default (`true`) on a single environment — or run `php artisan nightowl:install` against the database once, from anywhere.
+2. **Opt the others out.** Set `NIGHTOWL_RUN_MIGRATIONS=false` on every other environment that shares the database. Their `php artisan migrate` will skip the NightOwl tables. Telemetry still flows normally.
+
+<Note>
+  This only matters when environments **share** a NightOwl database. If each environment has its own NightOwl database, leave `NIGHTOWL_RUN_MIGRATIONS=true` everywhere.
+</Note>
+
 ## Agent runtime
 
 | Variable                    | Default     | Description                                                                |
 | --------------------------- | ----------- | -------------------------------------------------------------------------- |
+| `NIGHTOWL_ENABLED`          | `true`      | Master switch. Set `false` to make the package inert — no telemetry is collected or transmitted, and the migrations are not registered. Most commonly flipped off in the `testing` environment so your test suite doesn't pay the ingest overhead or require the `nightowl` database. `nightowl:install` still runs its migrations regardless. |
+| `NIGHTOWL_RUN_MIGRATIONS`   | `true`      | Whether NightOwl's migrations ride along with your app's `php artisan migrate`. Set `false` on environments that share one NightOwl database with another environment, so only one of them runs the table creation — otherwise the second deploy fails with `relation "nightowl_requests" already exists`. See [Sharing one database across environments](#sharing-one-database-across-environments). Telemetry is unaffected; `nightowl:install` runs the migrations regardless. |
 | `NIGHTOWL_AGENT_HOST`       | `127.0.0.1` | TCP host the agent binds to (use `0.0.0.0` or an LB VIP for multi-host)    |
 | `NIGHTOWL_AGENT_PORT`       | `2407`      | TCP port the agent listens on                                              |
 | `NIGHTOWL_AGENT_DRIVER`     | `async`     | Server driver (`async` or `sync`). `async` needs `pcntl` + `posix`         |

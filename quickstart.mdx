@@ -37,7 +37,19 @@ NIGHTOWL_DB_PASSWORD=your-password
   If you're running NightOwl [alongside Nightwatch's hosted agent](/agent/migration-from-nightwatch), you'll also set `NIGHTWATCH_TOKEN` — that's your real Nightwatch token, used by the Nightwatch SDK to reach Laravel Cloud's hosted ingest in parallel.
 </Note>
 
-## 4. Run the agent
+## 4. Install NightOwl
+
+```bash
+php artisan nightowl:install
+```
+
+This publishes `config/nightowl.php` and runs the migrations that create the `nightowl_*` tables in the PostgreSQL database you configured in step 3. It also runs a fork-safety probe to confirm the agent's SQLite + `pcntl_fork` buffer will work on your host.
+
+<Note>
+  The `nightowl_*` tables live in the BYO PostgreSQL database you configured above — not your app's primary database. You only need to initialize a given NightOwl database once.
+</Note>
+
+## 5. Run the agent
 
 ```bash
 php artisan nightowl:agent
@@ -45,13 +57,9 @@ php artisan nightowl:agent
 
 The agent starts on port 2407 by default. Nightwatch will automatically send telemetry to it.
 
-## 5. Open the dashboard
+## 6. Open the dashboard
 
 Go to [usenightowl.com](https://usenightowl.com) and select your app. You should see data flowing in within seconds.
-
-<Note>
-  The agent creates all required database tables automatically on first run. No manual migrations needed.
-</Note>
 
 ## Next steps
 
