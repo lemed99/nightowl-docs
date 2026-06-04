@@ -46,7 +46,7 @@ php artisan nightowl:install
 This publishes `config/nightowl.php` and runs the migrations that create the `nightowl_*` tables in the PostgreSQL database you configured in step 3. It also runs a fork-safety probe to confirm the agent's SQLite + `pcntl_fork` buffer will work on your host.
 
 <Note>
-  The `nightowl_*` tables live in the BYO PostgreSQL database you configured above — not your app's primary database. You only need to initialize a given NightOwl database once.
+  The `nightowl_*` tables live in the BYO PostgreSQL database you configured above — not your app's primary database. Migration history is tracked there too, so `nightowl:install` (and `php artisan nightowl:migrate`) are idempotent: safe to run on every environment and every deploy, even when several environments share one NightOwl database. See [Sharing one database across environments](/agent/configuration#sharing-one-database-across-environments).
 </Note>
 
 ## 5. Run the agent
