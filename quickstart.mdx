@@ -49,7 +49,32 @@ This publishes `config/nightowl.php` and runs the migrations that create the `ni
   The `nightowl_*` tables live in the BYO PostgreSQL database you configured above — not your app's primary database. Migration history is tracked there too, so `nightowl:install` (and `php artisan nightowl:migrate`) are idempotent: safe to run on every environment and every deploy, even when several environments share one NightOwl database. See [Sharing one database across environments](/agent/configuration#sharing-one-database-across-environments).
 </Note>
 
-## 5. Run the agent
+## 5. Route your logs to NightOwl
+
+Requests, queries, jobs, cache, and exceptions flow automatically once the agent is running. **Logs are the exception**: Laravel only writes to the channels in your active log stack, and the `nightwatch` channel is not added to that stack for you.
+
+Add `nightwatch` to your `LOG_STACK` so log records reach the agent:
+
+```env
+LOG_STACK=single,nightwatch
+```
+
+If your app overrides the `stack` channel in `config/logging.php` directly, add `nightwatch` to its `channels` array instead:
+
+```php
+// config/logging.php
+'stack' => [
+    'driver' => 'stack',
+    'channels' => ['single', 'nightwatch'],
+    'ignore_exceptions' => false,
+],
+```
+
+<Note>
+  The `nightwatch` log channel is registered automatically by `laravel/nightwatch`, but it is only consulted when it is part of the stack your app logs to. Until you add it, **Logs will stay empty in the dashboard** even though every other event type appears normally. Make sure `LOG_CHANNEL=stack` (Laravel's default) so the stack — and therefore `nightwatch` — is actually used.
+</Note>
+
+## 6. Run the agent
 
 ```bash
 php artisan nightowl:agent
@@ -57,7 +82,7 @@ php artisan nightowl:agent
 
 The agent starts on port 2407 by default. Nightwatch will automatically send telemetry to it.
 
-## 6. Open the dashboard
+## 7. Open the dashboard
 
 Go to [usenightowl.com](https://usenightowl.com) and select your app. You should see data flowing in within seconds.
 
