@@ -50,6 +50,13 @@
             ]
           }
         ]
+      },
+      {
+        "anchor": "Changelog",
+        "icon": "rss",
+        "pages": [
+          "changelog"
+        ]
       }
     ],
     "global": {

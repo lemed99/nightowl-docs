@@ -1,0 +1,115 @@
+---
+title: "Changelog"
+description: "New features, improvements, and fixes across the NightOwl agent, API, and dashboard."
+---
+
+What's new in NightOwl. Each entry covers the agent package, the backend API, and the dashboard UI together, so you can see everything that changed on a given date in one place.
+
+<Note>
+  Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
+</Note>
+
+<Update label="June 6, 2026" tags={["Agent", "API", "Performance"]}>
+  **Fast dashboards on high-volume apps**
+
+  - The agent now maintains per-minute rollup tables alongside your raw telemetry, and the dashboard reads them for wide time ranges instead of scanning every raw row. Queries, requests, jobs, outgoing requests, and cache views now load quickly even on busy apps where wide ranges used to time out. Percentile charts over long ranges are served from a built-in histogram.
+  - To make historical ranges fast right after upgrading, run `php artisan nightowl:backfill-rollups` once (it's throttled and safe to run alongside a live agent). New telemetry is rolled up automatically as it drains.
+  - Rollups are tiny, so they're kept far longer than raw telemetry (90 days by default, via `NIGHTOWL_ROLLUP_RETENTION_DAYS`) — keep long-range trend charts while pruning raw data aggressively.
+  - When a tenant query against a very large table runs too long, the dashboard now returns a clear "try a narrower time range" message instead of failing with a generic error.
+  - Added **Sign in with GitHub** alongside Google.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then `php artisan nightowl:migrate` and restart the agent. To backfill historical rollups, also run `php artisan nightowl:backfill-rollups`. See the [agent changelog (1.2.0)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#120---2026-06-06) for details.
+</Update>
+
+<Update label="June 5, 2026" tags={["API", "Performance"]}>
+  **Faster duration charts on large datasets**
+
+  - Percentile and duration charts are now computed inside PostgreSQL instead of loading every row into memory. This fixes out-of-memory errors on apps with high request volume and makes the charts noticeably faster.
+  - Raised the API worker memory ceiling so heavy dashboards stay responsive under load.
+  - Quickstart now documents routing your application logs into NightOwl with `LOG_STACK`.
+</Update>
+
+<Update label="June 4, 2026" tags={["Agent", "Dashboard"]}>
+  **Migration tracking and a master on/off switch**
+
+  - New `nightowl:migrate` command applies the agent's schema and records its migration history in your own database, so shared-database setups and upgrades are predictable. The new `nightowl:install` step is documented in the quickstart.
+  - Added `NIGHTOWL_ENABLED` as a single master switch for the agent, plus `NIGHTOWL_RUN_MIGRATIONS` to opt out of automatic migrations.
+  - Fixed an integer overflow on duration and size columns that could occur on very large values.
+  - When your tenant database is unreachable, the dashboard now shows a clear status page instead of hanging, and lets you remove the app from there.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then `php artisan nightowl:migrate`. See the [agent changelog (1.1.0)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#110---2026-06-04) for details.
+</Update>
+
+<Update label="June 3, 2026" tags={["Agent", "Dashboard"]}>
+  **Drain stability and a smoother first-run experience**
+
+  - Fixed the drain worker pinning a CPU core to 100% when running under Octane/Swoole.
+  - Added a watchdog so a stalled PostgreSQL SSL handshake or COPY no longer hangs the drain worker.
+  - Added `NIGHTOWL_DB_SSLMODE` so you can set the PostgreSQL SSL mode the agent uses (defaults to `prefer`).
+  - New onboarding page: if your database schema isn't initialized yet, the dashboard guides you through setup instead of erroring out.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent. See the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#1010---2026-06-03) for the 1.0.6–1.0.10 fixes.
+</Update>
+
+<Update label="June 1, 2026" tags={["API", "Performance"]}>
+  **More accurate P95**
+
+  - P95 latency is now calculated with PostgreSQL's `percentile_disc`, giving exact percentiles on query and request detail pages. Added a `avg` sort option alongside it.
+</Update>
+
+<Update label="May 28, 2026" tags={["Agent"]}>
+  **Cleaner dependencies**
+
+  - Removed the `react/http` dependency in favor of raw sockets. This drops an old `psr/http-message` version pin that could conflict with modern Laravel packages, so the agent installs cleanly alongside more of your dependencies.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent. See the [agent changelog (1.0.3)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#103---2026-05-28).
+</Update>
+
+<Update label="May 27, 2026" tags={["API"]}>
+  **Signup anti-abuse**
+
+  - Added honeypot fields, disposable-email blocking, and Gmail dot-normalization to signup, login, and password reset, cutting down on spam and duplicate accounts.
+</Update>
+
+<Update label="May 26, 2026" tags={["Launch"]} description="NightOwl 1.0">
+  **NightOwl is live**
+
+  The self-hosted monitoring platform for Laravel. Laravel Nightwatch collects your telemetry, the NightOwl agent buffers it and drains it into your own PostgreSQL database, and the NightOwl dashboard gives you a full monitoring UI on top. Your request data never touches NightOwl's infrastructure.
+
+  **Monitoring**
+
+  - All 12 Laravel event types: requests, exceptions, queries, jobs, commands, scheduled tasks, cache, mail, notifications, outgoing requests, logs, and users.
+  - P50/P95/P99 percentile charts and sortable, filterable lists for every event type.
+  - Detail pages with full traces, including the dispatched-job tree and job-attempt history.
+  - Environment filtering across exceptions, issues, and queries.
+
+  **Issue management**
+
+  - Exceptions grouped by fingerprint and slow routes opened automatically when they cross the p95 thresholds you configure.
+  - Status (open / resolved / ignored), priority, assignment, comments, and a full activity timeline.
+  - Bulk actions to resolve, ignore, reopen, prioritize, and assign in one step.
+  - Automatic reopen when a resolved issue recurs (regression detection).
+
+  **Alerts**
+
+  - Multi-channel notifications over Slack, Discord, Email (bring your own SMTP), and Webhook (HMAC-signed).
+
+  **Plans and teams**
+
+  - Three flat tiers: $5 Hobby, $15 Team, $69 Agency. Bring your own PostgreSQL, with no event limits or retention caps.
+  - Teams with shared apps, owner-pays billing so invitees inherit the owner's plan, and Agency-tier app ownership transfers.
+
+  **Integrations**
+
+  - MCP server with full dashboard parity, so Claude Code, Codex, Cursor, Windsurf, and Zed can query and triage your monitoring data over personal access tokens.
+  - Google OAuth sign-in.
+
+  **Agent**
+
+  - High-throughput ReactPHP ingest with a local SQLite WAL buffer and a PostgreSQL drain over the COPY protocol.
+  - Runs standalone or in parallel mode alongside an existing Laravel Nightwatch Cloud setup.
+  - Multiple drain workers, configurable batch sizes, and per-instance health monitoring.
+  - Laravel 11, 12, and 13 supported.
+
+  **Agent install:** `composer require nightowl/agent`. See the [agent changelog (1.0.0)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#100---2026-05-08) and the [quickstart](/quickstart).
+</Update>

@@ -24,6 +24,7 @@ Repo: `https://github.com/lemed99/nightowl-docs` (split from the monolith in Apr
 │   └── dark.svg
 ├── introduction.mdx    # Overview — what NightOwl is, how it works, key features
 ├── quickstart.mdx      # 5-step getting started guide
+├── changelog.mdx       # Release notes (Mintlify <Update> entries, newest first)
 ├── agent/              # Agent deployment + scaling
 │   ├── migration-from-nightwatch.mdx
 │   ├── multiple-instances.mdx
@@ -39,7 +40,7 @@ Repo: `https://github.com/lemed99/nightowl-docs` (split from the monolith in Apr
     └── postgresql-sizing.mdx
 ```
 
-**12 MDX pages total** across 4 content groups.
+**13 MDX pages total** across 4 content groups plus a standalone changelog.
 
 ## `docs.json` — Mintlify Config
 
@@ -52,6 +53,7 @@ Repo: `https://github.com/lemed99/nightowl-docs` (split from the monolith in Apr
   2. **Agent** — migration, multiple-instances, health-monitoring
   3. **NightOwl Features** — issues, alert-channels, smtp-setup, mcp-server, data-management
   4. **Performance** — throughput, postgresql-sizing
+- Second anchor ("Changelog", rss icon) holding the single `changelog` page
 - Global anchors (top-right): Agent README (GitHub), GitHub repo
 - Navbar: "Dashboard" link + "Get Started" signup button
 
@@ -86,6 +88,18 @@ Every page:
 1. Create `<group>/<slug>.mdx` with frontmatter `title` + `description`
 2. Register the path in `docs.json` under the relevant group
 3. Commit + push to `main` — Mintlify auto-rebuilds
+
+## Maintaining the Changelog
+
+`changelog.mdx` is the customer-facing release log. Conventions:
+
+- Newest entries on top. Each release is one Mintlify `<Update label="Month D, YYYY" tags={[...]}>` block.
+- `tags` are the affected surface(s): `Agent`, `API`, `Dashboard`, `Performance`, `Launch`.
+- Group all repos' changes for a given date into one entry — customers don't care which repo shipped what.
+- Write in customer language, not commit-speak. Translate "fix int4 overflow on duration columns" into the user-visible symptom and fix.
+- Only list user-facing changes. Skip internal refactors, test-only commits, and CI tweaks.
+- Every `Agent`-tagged entry ends with an **"Upgrading the agent:"** line that states the commands to run (`composer update`, `nightowl:migrate`, restart) and deep-links to the matching version section of the agent changelog: `https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md`. GitHub anchors strip brackets/dots, so `## [1.1.0] - 2026-06-04` → `#110---2026-06-04`. Source the exact upgrade steps from that repo's `CHANGELOG.md`, not from the commit log.
+- Source of truth for new entries: `git log` across the five repos since the last changelog date.
 
 ## Adding a Navigation Group
 
