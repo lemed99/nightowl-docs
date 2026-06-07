@@ -9,6 +9,15 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="June 7, 2026" tags={["Agent", "API"]}>
+  **Health reports no longer dropped on long hostnames or extreme metrics**
+
+  - If you run the agent on Kubernetes or a host with a long FQDN, its instance identifier (`hostname:pid`) could be too long for the platform to store, which silently rejected the entire health report — so that instance never showed up under agent health. The platform now accepts longer instance IDs, and the agent caps its own identifier to fit.
+  - Two health gauges, Postgres write latency and buffer utilization, could overflow the platform's columns under a stalled database or a very low `NIGHTOWL_MAX_PENDING_ROWS`, again dropping the report just when you most needed the signal. Both are now clamped on the agent and stored in wider columns on the platform.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then restart the agent. See the [agent changelog (1.2.1)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#121---2026-06-07) for details.
+</Update>
+
 <Update label="June 6, 2026" tags={["Agent", "API", "Performance"]}>
   **Fast dashboards on high-volume apps**
 
