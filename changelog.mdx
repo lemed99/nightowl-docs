@@ -9,6 +9,46 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="June 24, 2026" tags={["Dashboard", "API"]}>
+  **Agency tier: run every client from one place**
+
+  - **App-scoped access.** Limit a team member to specific apps instead of your whole fleet — handy for contractors or per-client staff. Invite several people across several apps with a single shareable, email-gated invite link.
+  - **Fleet portfolio overview.** One page showing request volume, error rates, and open issues across all your apps, so you can spot the client that needs attention without opening each app. Live traffic counts in this view come from the agent's health report (agent 1.2.3+ — see below); no request content ever leaves your database.
+  - **Onboarding templates.** Save a new-app setup as a reusable template instead of re-entering the same configuration for each new client.
+</Update>
+
+<Update label="June 22, 2026" tags={["Agent"]}>
+  **More accurate timestamps and percentiles**
+
+  - Fixed telemetry timestamps drifting on agents or databases not set to UTC. The drift could make recent data vanish from short time-range filters (1H/6H) or show "last seen" times in the future. Every telemetry table is now stamped in UTC. Rows written by older agents on a non-UTC server stay skewed — let them age out via `nightowl:prune`, or run `nightowl:clear` on a throwaway dataset; there's no automatic correction.
+  - High percentiles (p95/p99) over wide time ranges no longer overshoot past the slowest query actually observed.
+  - The agent's health report now carries lightweight per-app request, error, and exception counts (plus an open-issue gauge) that power the new Agency **portfolio overview**, and a new `nightowl_reports` table is added by the migration. Both are counts/snapshots only — no request content leaves your database.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then `php artisan nightowl:migrate` (adds the reports table) and restart the agent. See the [agent changelog (1.2.3)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#123---2026-06-22) for details; the timezone fix completes one started in [1.2.2](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#122---2026-06-07).
+</Update>
+
+<Update label="June 19, 2026" tags={["Dashboard", "API", "Performance"]}>
+  **Profile images, environment colors, and faster 1-hour views**
+
+  - Upload a profile avatar, and give each app its own logo.
+  - Assign a color to each environment (production, staging, and so on) in settings, so they're easy to tell apart across the dashboard.
+  - The 1-hour view now reads from the same pre-aggregated rollups as the wider ranges, so it loads quickly instead of timing out on high-volume apps (charts now use 60-second buckets). Filter dropdowns are also bounded to rollups so they no longer time out on busy databases.
+</Update>
+
+<Update label="June 18, 2026" tags={["Dashboard", "API"]}>
+  **Time format preference and steadier dashboards on flaky databases**
+
+  - Choose 12-hour or 24-hour time display in your preferences (defaults to your browser's locale).
+  - If your database server freezes mid-query — host out-of-memory, a network partition — the dashboard now returns a clear error quickly instead of hanging until the request is killed.
+</Update>
+
+<Update label="June 16, 2026" tags={["API", "Performance"]}>
+  **Wide-range charts no longer crash high-volume apps**
+
+  - Percentile, duration, and count charts over wide time ranges are now served entirely from rollup summaries, eliminating the out-of-memory crashes and timeouts that hit busy tenants when these were computed from raw telemetry.
+  - The MCP (Claude) data tools now work with transaction-mode connection poolers such as Supavisor, PgBouncer, and RDS Proxy.
+</Update>
+
 <Update label="June 7, 2026" tags={["Agent", "API"]}>
   **Health reports no longer dropped on long hostnames or extreme metrics**
 
