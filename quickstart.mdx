@@ -7,6 +7,10 @@ description: Get NightOwl running in 5 minutes.
 
 Create your NightOwl account at [usenightowl.com/signup](https://usenightowl.com/signup), add your application, and connect your PostgreSQL database. After the app is created, the dashboard reveals an agent token and the connected-app ID — copy both, you'll paste them into your `.env` in step 3.
 
+<Note>
+  Your PostgreSQL must be reachable from NightOwl over a **public IP** — managed providers like **Supabase**, **Neon**, or **RDS** qualify; a `localhost` or private-network database is rejected with *"Host must be publicly routable."* NightOwl creates the `nightowl_*` tables but **does not create the database itself**, so point it at a database that already exists. On Supabase that's `postgres`, on Neon it's `neondb` — or create a dedicated one first (`CREATE DATABASE nightowl;`).
+</Note>
+
 ## 2. Install the agent
 
 Add the NightOwl agent to your Laravel app (it pulls in `laravel/nightwatch` automatically as a dependency):
@@ -27,7 +31,15 @@ NIGHTOWL_DB_PORT=5432
 NIGHTOWL_DB_DATABASE=nightowl
 NIGHTOWL_DB_USERNAME=nightowl
 NIGHTOWL_DB_PASSWORD=your-password
+NIGHTOWL_DB_SSLMODE=prefer
 ```
+
+<Warning>
+  **Use the direct or session connection (port `5432`) — never a transaction-mode pooler (Supabase's port `6543`).** The agent drains via PostgreSQL's `COPY` protocol, which needs a session-scoped connection. A transaction-mode pooler (Supabase Supavisor on `6543`, PgBouncer in transaction mode) splits the `COPY` stream across backends and the drain fails silently — the dashboard stays empty. Managed Postgres also requires SSL, so set `NIGHTOWL_DB_SSLMODE=require`.
+
+  - **Supabase** — use the **Session pooler** (port `5432`, IPv4-reachable) or the Direct connection from *Database → Connect*; database `postgres`.
+  - **Neon** — the standard endpoint host on port `5432` (avoid the `-pooler` host variant for the agent); database `neondb`.
+</Warning>
 
 <Note>
   `NIGHTOWL_TOKEN` is the token you copy from the NightOwl dashboard. The agent uses it to authenticate inbound payloads from `laravel/nightwatch` and to authenticate itself when reporting health to the platform.
@@ -84,7 +96,13 @@ The agent starts on port 2407 by default. Nightwatch will automatically send tel
 
 ## 7. Open the dashboard
 
-Go to [usenightowl.com](https://usenightowl.com) and select your app. You should see data flowing in within seconds.
+Go to [usenightowl.com](https://usenightowl.com) and select your app. Generate some traffic first — hit a route, dispatch a job, or trigger an exception — then refresh; records appear within seconds. A freshly installed agent on an idle app shows an empty dashboard until traffic flows.
+
+To confirm the agent itself is up, curl its health endpoint on the host where it runs:
+
+```bash
+curl http://127.0.0.1:2409/status
+```
 
 ## Next steps
 

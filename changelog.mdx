@@ -9,6 +9,16 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="June 26, 2026" tags={["Agent", "Dashboard", "API"]}>
+  **Clearer answers when telemetry stops flowing**
+
+  - When the agent can reach your database but can't write to it — the NightOwl tables aren't migrated, the database role can't INSERT, or the credentials/database name are wrong — the health page now names the exact cause and the fix (for example, "Run `php artisan nightowl:migrate`") instead of a generic "Postgres may be unreachable." Only the error code and table name are reported; your row data never leaves your database.
+  - **Test connection** when adding or editing an app now also checks that the NightOwl tables exist, so a not-yet-migrated database is caught at setup instead of showing an empty dashboard later.
+  - New opt-in setting (`NIGHTOWL_DRAIN_QUARANTINE`) lets the agent set aside an individual telemetry row your database rejects so the rest of your data keeps flowing, instead of the pipeline stalling on one bad row; anything set aside is reported on the health page.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent. See the [agent changelog (1.2.4)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#124---2026-06-26) for details.
+</Update>
+
 <Update label="June 24, 2026" tags={["Dashboard", "API"]}>
   **Agency tier: run every client from one place**
 

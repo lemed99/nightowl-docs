@@ -18,6 +18,10 @@ All configuration lives in `config/nightowl.php` after running `php artisan nigh
 
 Use the same credentials you entered when creating the app in the dashboard — the hosted UI uses them to read the telemetry your agent wrote.
 
+<Warning>
+  **Managed Postgres (Supabase, Neon, RDS):** point the agent at the **direct or session connection on port `5432`**, not a transaction-mode pooler (Supabase's `6543`). The `COPY`-based drain needs a session-scoped connection and fails through transaction poolers. Set `NIGHTOWL_DB_SSLMODE=require`, and use the provider's existing database (`postgres` on Supabase, `neondb` on Neon) — NightOwl creates the tables, not the database.
+</Warning>
+
 ### Sharing one database across environments
 
 NightOwl stamps an `environment` column (your `APP_ENV`) on every row, so you can point several app environments (local, staging, production) at **one** NightOwl database and filter them apart in the dashboard. The data is partitioned by environment; the `nightowl_*` tables themselves are shared.
@@ -45,10 +49,9 @@ If a package upgrade adds a migration and you forget to run `nightowl:migrate`, 
 | `NIGHTOWL_AGENT_HOST`       | `127.0.0.1` | TCP host the agent binds to (use `0.0.0.0` or an LB VIP for multi-host)    |
 | `NIGHTOWL_AGENT_PORT`       | `2407`      | TCP port the agent listens on                                              |
 | `NIGHTOWL_AGENT_DRIVER`     | `async`     | Server driver (`async` or `sync`). `async` needs `pcntl` + `posix`         |
-| `NIGHTOWL_SO_REUSEPORT`     | `false`     | Allow multiple agents to bind the same port (Linux only)                   |
 | `NIGHTOWL_ENVIRONMENT`      | `APP_ENV`   | Override `APP_ENV` for the `environment` column stamped on every row       |
 
-See [Running multiple instances](/agent/multiple-instances) for `SO_REUSEPORT`.
+The async server enables `SO_REUSEPORT` automatically on Linux, so multiple agents can bind the same port without extra configuration — see [Running multiple instances](/agent/multiple-instances).
 
 ## Authentication
 
