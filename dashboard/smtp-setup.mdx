@@ -18,7 +18,11 @@ In the dashboard, open your app and go to **Settings → Alert Channels → New 
 | Encryption  | `tls` (STARTTLS on 587), `ssl` (SMTPS on 465), or `none` (port 25 or a local relay with no TLS — rarely used). |
 | From address| The `From:` header on the alert email. Must be an address the provider lets you send as. |
 
-After saving, use **Send test** to fire a synthetic alert. A successful test confirms the credentials and DNS/SPF/DKIM setup work end-to-end.
+After saving, use **Send test** to fire a synthetic alert. A successful test confirms your credentials and `From:` setup are valid — but the test is sent from NightOwl's servers, while real alerts are sent by the agent running on *your* host. So a passing test does not, by itself, guarantee real alerts will arrive. See [Troubleshooting](#troubleshooting) below for the two common causes.
+
+<Warning>
+  **Match the port to the encryption.** Port `465` requires `ssl`; port `587` requires `tls`. The two are not interchangeable: `ssl` opens an encrypted connection immediately (implicit TLS), while `tls` connects in plaintext and upgrades via `STARTTLS`. A mismatched pair — `587` with `ssl`, or `465` with `tls` — can still pass **Send test** (the test path tolerates it) but fails silently from the agent, which uses a stricter SMTP client. If alerts never arrive, check this pairing first.
+</Warning>
 
 ## Gmail (personal or Google Workspace)
 
@@ -139,10 +143,15 @@ Without SPF/DKIM, Gmail and Microsoft 365 will quietly mark alerts as spam — y
     For other providers: the credentials are wrong, the account is suspended, or the API key doesn't have Mail Send permission.
   </Accordion>
   <Accordion title="Connection timeout on port 587 or 465">
-    Your server's outbound firewall blocks the port. Try the other port (587 ↔ 465). On managed hosts like DigitalOcean droplets, port 25 is usually blocked by default but 587 is open.
+    Your host's outbound firewall blocks the port. Real alerts are sent from the machine running the agent, so the relevant firewall is *yours*, not NightOwl's — a **Send test** that succeeds from NightOwl's servers won't catch this. Try the other port (587 ↔ 465), and remember to switch encryption to match (`587`→`tls`, `465`→`ssl`). On managed hosts like DigitalOcean droplets and many cloud VMs, port 25 is blocked by default but 587 is usually open; some providers block all outbound SMTP until you open a support request.
   </Accordion>
   <Accordion title="Test email succeeds but real alerts never arrive">
-    The test uses the same dispatch path as real alerts, so credentials are fine. Look in spam/junk, check that your recipient list is correct on the channel, and verify DMARC/SPF alignment for the From address.
+    **Send test** and real alerts take different paths: the test is dispatched from NightOwl's servers, while real alerts are dispatched by the agent on your own host with a stricter SMTP client. A passing test rules out wrong credentials and a bad `From:` address, but two things it does **not** rule out:
+
+    1. **Outbound SMTP blocked on your host.** Your host's firewall (or your cloud provider) blocks outbound 587/465. The test still works because it leaves NightOwl's infrastructure, not yours. Confirm with `nc -vz smtp.yourprovider.com 587` from the box running the agent.
+    2. **Port/encryption mismatch.** `587` with `ssl`, or `465` with `tls`, may pass the lenient test path but fail from the agent. Set `587`→`tls` and `465`→`ssl`.
+
+    If both are ruled out, look in spam/junk, check the recipient list on the channel, and verify DMARC/SPF alignment for the `From` address.
   </Accordion>
   <Accordion title="Alerts arrive but marked as spam">
     Missing or misconfigured SPF/DKIM. Run the From domain through [mxtoolbox.com/deliverability](https://mxtoolbox.com/deliverability) and fix anything flagged. A warmup period is also normal for a brand-new sending domain.
