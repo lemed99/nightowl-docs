@@ -19,7 +19,7 @@ All configuration lives in `config/nightowl.php` after running `php artisan nigh
 Use the same credentials you entered when creating the app in the dashboard — the hosted UI uses them to read the telemetry your agent wrote.
 
 <Warning>
-  **Managed Postgres (Supabase, Neon, RDS):** point the agent at the **direct or session connection on port `5432`**, not a transaction-mode pooler (Supabase's `6543`). The `COPY`-based drain needs a session-scoped connection and fails through transaction poolers. Set `NIGHTOWL_DB_SSLMODE=require`, and use the provider's existing database (`postgres` on Supabase, `neondb` on Neon) — NightOwl creates the tables, not the database.
+  **Managed Postgres (Supabase, Neon, RDS):** point the agent at the **direct or session connection on port `5432`**, not a transaction-mode pooler (Supabase's `6543`). The agent holds a long-lived drain connection and relies on session-level settings (`synchronous_commit`) that transaction-mode poolers don't preserve, so a session-scoped connection is the right fit. Set `NIGHTOWL_DB_SSLMODE=require`, and use the provider's existing database (`postgres` on Supabase, `neondb` on Neon) — NightOwl creates the tables, not the database.
 </Warning>
 
 ### Sharing one database across environments

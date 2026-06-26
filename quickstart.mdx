@@ -35,7 +35,7 @@ NIGHTOWL_DB_SSLMODE=prefer
 ```
 
 <Warning>
-  **Use the direct or session connection (port `5432`) — never a transaction-mode pooler (Supabase's port `6543`).** The agent drains via PostgreSQL's `COPY` protocol, which needs a session-scoped connection. A transaction-mode pooler (Supabase Supavisor on `6543`, PgBouncer in transaction mode) splits the `COPY` stream across backends and the drain fails silently — the dashboard stays empty. Managed Postgres also requires SSL, so set `NIGHTOWL_DB_SSLMODE=require`.
+  **Use the direct or session connection (port `5432`), not a transaction-mode pooler (Supabase's port `6543`).** The agent runs as a long-lived process that holds its database connection and sets a session-level option (`synchronous_commit`) for drain throughput. A transaction-mode pooler (Supabase Supavisor on `6543`, PgBouncer in transaction mode) hands each transaction a different backend and doesn't keep session state, so it's the wrong fit for the agent's persistent drain connection — use the session pooler or direct connection instead. Managed Postgres also requires SSL, so set `NIGHTOWL_DB_SSLMODE=require`.
 
   - **Supabase** — use the **Session pooler** (port `5432`, IPv4-reachable) or the Direct connection from *Database → Connect*; database `postgres`.
   - **Neon** — the standard endpoint host on port `5432` (avoid the `-pooler` host variant for the agent); database `neondb`.
