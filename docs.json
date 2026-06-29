@@ -8,6 +8,12 @@
     "dark": "#059669"
   },
   "favicon": "/favicon.svg",
+  "redirects": [
+    {
+      "source": "/agent/migration-from-nightwatch",
+      "destination": "/agent/running-alongside-nightwatch"
+    }
+  ],
   "navigation": {
     "anchors": [
       {
@@ -27,7 +33,7 @@
               "agent/configuration",
               "agent/filtering-and-context",
               "agent/production-deployment",
-              "agent/migration-from-nightwatch",
+              "agent/running-alongside-nightwatch",
               "agent/multiple-instances",
               "agent/health-monitoring"
             ]

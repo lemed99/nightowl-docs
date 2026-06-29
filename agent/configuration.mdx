@@ -59,7 +59,7 @@ The async server enables `SO_REUSEPORT` automatically on Linux, so multiple agen
 | ------------------- | ----------------------------------------------------------------------------------------------------- |
 | `NIGHTOWL_TOKEN`    | Agent token copied from the NightOwl dashboard (Settings → Agent token). The agent verifies inbound payloads against it and uses it as a `Bearer` credential when reporting health to the NightOwl platform. For a standalone install this is the only token you need. |
 | `NIGHTOWL_APP_ID`   | Connected-app ID, copied from the NightOwl dashboard (Settings → Agent token, alongside `NIGHTOWL_TOKEN`). Required for alert emails and webhooks to include a direct-link `view_url` pointing at the issue. Without it, links fall back to the generic dashboard root. |
-| `NIGHTWATCH_TOKEN`  | Only needed in [parallel mode](/agent/migration-from-nightwatch), when NightOwl runs alongside Nightwatch's hosted agent. This is your real Nightwatch token — the Nightwatch SDK uses it to authenticate against Laravel Cloud's hosted ingest. Don't set it for a standard install. |
+| `NIGHTWATCH_TOKEN`  | Only needed in [parallel mode](/agent/running-alongside-nightwatch), when NightOwl runs alongside Nightwatch's hosted agent. This is your real Nightwatch token — the Nightwatch SDK uses it to authenticate against Laravel Cloud's hosted ingest. Don't set it for a standard install. |
 
 For a standalone install, set `NIGHTOWL_TOKEN` only. For parallel mode, set both: `NIGHTOWL_TOKEN` is what the NightOwl agent verifies against, `NIGHTWATCH_TOKEN` is your Nightwatch token used by the Nightwatch SDK to reach Laravel Cloud's hosted ingest in parallel.
 
@@ -122,7 +122,7 @@ Full retention and pruning strategy lives in [Data management](/dashboard/data-m
 | ----------------------------------- | ------- | -------------------------------------------------------------- |
 | `NIGHTOWL_PARALLEL_WITH_NIGHTWATCH` | `false` | Fan telemetry out to both Nightwatch and NightOwl simultaneously |
 
-See [Running alongside Nightwatch](/agent/migration-from-nightwatch).
+See [Running alongside Nightwatch](/agent/running-alongside-nightwatch).
 
 ## Artisan commands
 

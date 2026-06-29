@@ -46,7 +46,7 @@ NIGHTOWL_DB_SSLMODE=prefer
 
   `NIGHTOWL_APP_ID` is the connected-app ID, shown alongside the token after you create the app. The agent embeds it in alert payloads so the **View issue** link in emails and webhooks points directly at the issue page. Without it, links fall back to the generic dashboard root.
 
-  If you're running NightOwl [alongside Nightwatch's hosted agent](/agent/migration-from-nightwatch), you'll also set `NIGHTWATCH_TOKEN` — that's your real Nightwatch token, used by the Nightwatch SDK to reach Laravel Cloud's hosted ingest in parallel.
+  If you're running NightOwl [alongside Nightwatch's hosted agent](/agent/running-alongside-nightwatch), you'll also set `NIGHTWATCH_TOKEN` — that's your real Nightwatch token, used by the Nightwatch SDK to reach Laravel Cloud's hosted ingest in parallel.
 </Note>
 
 ## 4. Install NightOwl
@@ -93,6 +93,10 @@ php artisan nightowl:agent
 ```
 
 The agent starts on port 2407 by default. Nightwatch will automatically send telemetry to it.
+
+<Warning>
+  Port 2407 is also **Nightwatch's default ingest port**. If you're already running the Nightwatch agent (`nightwatch:agent`), the two will collide and the NightOwl agent won't start. To run both side by side, set `NIGHTOWL_AGENT_PORT` to a free port and enable parallel mode — see [Running Alongside Nightwatch](/agent/running-alongside-nightwatch).
+</Warning>
 
 ## 7. Open the dashboard
 

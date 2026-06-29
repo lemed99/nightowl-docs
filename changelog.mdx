@@ -9,6 +9,20 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="June 29, 2026" tags={["Agent", "Dashboard", "API"]}>
+  **Accurate timelines after an outage, clearer database errors, and correct job counts**
+
+  - Telemetry is now dated by when each event actually happened, not when it reached your database. After a database outage, the backlog the agent catches up on lands in the minutes the events occurred instead of bunching at "now" — so time-range charts and percentiles stay accurate across a recovery.
+  - The health page now tells "can't connect to your database" apart from "connected but can't write," so a network/credential problem and a not-yet-migrated schema no longer show the same message.
+  - If the agent can't start because its port is already in use — most often because Nightwatch's agent already holds the shared default port 2407 — it now prints a clear message and how to run the two side by side, instead of a stack trace.
+  - **Job counts and durations are now correct.** Job totals across the dashboard count actual job attempts rather than double-counting the dispatch and the attempt, and reported minimum/p95 job durations are no longer dragged down by queued-dispatch rows.
+  - The **Source** badge on mail, notification, and log lists now deep-links to the parent request or job it ran inside.
+  - Fixed a case where a detail page could briefly show another entity's cached data, and made detail-list lookups for job-sourced rows faster (a new database index).
+  - New `nightowl:prune --hours` option for retaining only a few hours of raw telemetry, and the agent no longer re-sends or double-counts data if a local buffer write fails after the rows were already saved to your database.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then `php artisan nightowl:migrate` (adds a job index) and restart the agent. See the [agent changelog (1.2.5)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#125---2026-06-29) for details.
+</Update>
+
 <Update label="June 26, 2026" tags={["Agent", "Dashboard", "API"]}>
   **Clearer answers when telemetry stops flowing**
 

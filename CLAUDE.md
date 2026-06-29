@@ -26,7 +26,7 @@ Repo: `https://github.com/lemed99/nightowl-docs` (split from the monolith in Apr
 ├── quickstart.mdx      # 5-step getting started guide
 ├── changelog.mdx       # Release notes (Mintlify <Update> entries, newest first)
 ├── agent/              # Agent deployment + scaling
-│   ├── migration-from-nightwatch.mdx
+│   ├── running-alongside-nightwatch.mdx
 │   ├── multiple-instances.mdx
 │   └── health-monitoring.mdx
 ├── dashboard/          # Feature guides
@@ -69,7 +69,7 @@ Every page:
 - Numbered steps OR "The X signals" / "The Y types" sections
 - Mintlify components: `<Card>`, `<CardGroup>`, `<Note>`, `<AccordionGroup>`, `<Accordion>`, `<Tabs>`, `<Tab>`
 - Code blocks with explicit language (bash, env, json, php)
-- Cross-links via relative paths (e.g., `/agent/migration-from-nightwatch`)
+- Cross-links via relative paths (e.g., `/agent/running-alongside-nightwatch`)
 - Status tables, configuration examples, diagnostic flowcharts
 
 **Example page shape** (e.g., `dashboard/issues.mdx`):
