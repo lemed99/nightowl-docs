@@ -11,6 +11,16 @@ Create your NightOwl account at [usenightowl.com/signup](https://usenightowl.com
   Your PostgreSQL must be reachable from NightOwl over a **public IP** — managed providers like **Supabase**, **Neon**, or **RDS** qualify; a `localhost` or private-network database is rejected with *"Host must be publicly routable."* NightOwl creates the `nightowl_*` tables but **does not create the database itself**, so point it at a database that already exists. On Supabase that's `postgres`, on Neon it's `neondb` — or create a dedicated one first (`CREATE DATABASE nightowl;`).
 </Note>
 
+<Info>
+  **Firewall or IP allowlist on your database?** The dashboard reads your telemetry by connecting to your PostgreSQL from a single static IP:
+
+  ```
+  178.156.227.16
+  ```
+
+  Add `178.156.227.16/32` to your database's allowlist (RDS security group, Supabase network restrictions, Cloud SQL authorized networks, your firewall's inbound rules). This is one address, not a range — a `/32` covers it. If NightOwl can't reach your database, connecting the app fails with a connection-timeout error.
+</Info>
+
 ## 2. Install the agent
 
 Add the NightOwl agent to your Laravel app (it pulls in `laravel/nightwatch` automatically as a dependency):
