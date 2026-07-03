@@ -1,0 +1,89 @@
+---
+title: "Laravel Vapor"
+description: "Run NightOwl on Laravel Vapor by hosting the agent on a long-running box and shipping telemetry to it over your private network."
+---
+
+Laravel Vapor runs your application on AWS Lambda, where functions are stateless and short-lived. The NightOwl agent is a long-running daemon with a local SQLite buffer, so it can't run inside a Lambda invocation. The supported pattern is a two-host split: run the agent on a long-running server in the same private network, and point your Vapor app at it with `NIGHTOWL_INGEST_URI`.
+
+This mirrors how [Laravel Nightwatch runs on Vapor](https://nightwatch.laravel.com/docs/guides/vapor) — the agent lives on a persistent instance, and the serverless app transmits to it over the private network.
+
+## How it fits together
+
+```
+┌────────────────────────┐        ┌────────────────────────┐
+│ Vapor app (Lambda)     │        │ Agent host (EC2/Forge) │
+│ laravel/nightwatch +   │─TCP───▶│ php artisan            │        ┌──────────────┐
+│ nightowl/agent         │ 2407   │ nightowl:agent         │──COPY─▶│ Your Postgres│
+│ NIGHTOWL_INGEST_URI ───┼─priv.─▶│ NIGHTOWL_AGENT_HOST=   │        └──────────────┘
+│   = 10.0.0.5:2407      │  net   │   0.0.0.0              │
+└────────────────────────┘        └────────────────────────┘
+```
+
+The Vapor app **collects** telemetry and transmits it over TCP. The agent host **buffers and drains** it to your PostgreSQL database. Only the agent host holds your database credentials and writes to Postgres — the Lambda functions never touch it.
+
+<Note>
+  Install the `nightowl/agent` package in your application as usual, and deploy the **same release** to both Vapor and the agent host. On Vapor the package only redirects Nightwatch's collector to `NIGHTOWL_INGEST_URI` — you never run the `nightowl:agent` daemon there. On the agent host you run the daemon.
+</Note>
+
+## Setup
+
+<Steps>
+  <Step title="Provision a long-running agent host">
+    Stand up a persistent server that can reach your PostgreSQL database and sits in a network your Vapor environment can route to — an EC2 instance in the same VPC, or a Forge-managed server peered into it. This box runs the agent continuously; size it from the [throughput guide](/performance/throughput).
+  </Step>
+
+  <Step title="Run the agent on that host">
+    Deploy your application to the agent host and start the daemon under a supervisor, exactly as in [Production deployment](/agent/production-deployment). Bind it to all interfaces so the Vapor app can reach it, and give it your database credentials and token:
+
+    ```env
+    NIGHTOWL_AGENT_HOST=0.0.0.0       # accept connections from the Vapor subnet, not just loopback
+    NIGHTOWL_AGENT_PORT=2407
+    NIGHTOWL_TOKEN=your-agent-token   # from the dashboard (Settings → Agent token)
+
+    NIGHTOWL_DB_HOST=your-postgres-host
+    NIGHTOWL_DB_PORT=5432
+    NIGHTOWL_DB_DATABASE=nightowl
+    NIGHTOWL_DB_USERNAME=nightowl
+    NIGHTOWL_DB_PASSWORD=secret
+    NIGHTOWL_DB_SSLMODE=require
+    ```
+
+    Run `php artisan nightowl:migrate` on this host as part of its deploy — it owns the schema. See [Configuration](/agent/configuration) for the full variable list.
+  </Step>
+
+  <Step title="Open the agent's port to the Vapor subnet">
+    Add a security-group / firewall rule on the agent host allowing inbound TCP on the ingest port from your Vapor environment's subnet:
+
+    | Setting     | Value                          |
+    | ----------- | ------------------------------ |
+    | Protocol    | TCP                            |
+    | Port        | `2407`                         |
+    | Source      | your Vapor subnet CIDR (e.g. `10.0.0.0/21`) |
+
+    Your Vapor environment must be attached to a network (VPC) that can route to the agent host's private address.
+  </Step>
+
+  <Step title="Point the Vapor app at the agent">
+    Set these on your Vapor environment. `NIGHTOWL_INGEST_URI` is the agent host's **private** `host:port` — this is the one variable that redirects telemetry off loopback and across the network:
+
+    ```env
+    NIGHTOWL_INGEST_URI=10.0.0.5:2407   # the agent host's private address
+    NIGHTOWL_INGEST_TIMEOUT=1.0         # a touch higher than the 0.5s loopback default, for the network hop
+    NIGHTOWL_TOKEN=your-agent-token     # the SAME token the agent host verifies against
+    ```
+
+    The Vapor app needs **no** `NIGHTOWL_DB_*` variables — it only transmits over TCP and never opens a database connection.
+  </Step>
+</Steps>
+
+## Keep both sides on the same release
+
+The agent verifies the payload's protocol version and token, and the two hosts must agree on the `laravel/nightwatch` version that shapes the wire format. Because the agent host and the Vapor app run the same application release, deploying the same commit to both keeps them in lockstep. If you upgrade `nightowl/agent` (and the `laravel/nightwatch` it pulls in), deploy that release to **both** hosts together, then restart the daemon.
+
+<Warning>
+  Keep the ingest port private. Telemetry travels over plain TCP (token-gated, not encrypted in transit), so `2407` should only be reachable from your Vapor subnet — never expose it to the public internet. Scope the security-group source to your subnet CIDR, not `0.0.0.0/0`.
+</Warning>
+
+## Verifying it works
+
+Open the [health dashboard](/agent/health-monitoring) for the agent host after a deploy. Its ingest rate should climb in step with your Vapor traffic, and buffer depth should stay low as the drain keeps up. If ingest stays flat, check — in order — that the security-group rule allows `2407` from the Lambda subnet, that `NIGHTOWL_INGEST_URI` points at the agent's private address, and that the `NIGHTOWL_TOKEN` matches on both hosts.

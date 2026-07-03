@@ -43,12 +43,22 @@ Run the same command as multiple units (e.g. `nightowl-agent@1`, `nightowl-agent
 
 ## Running multiple agents across hosts
 
-For horizontal scaling across machines, put a TCP load balancer (HAProxy, nginx stream module, or a cloud LB) in front of the agent pool. Your application sends to the load balancer's address:
+For horizontal scaling across machines, put a TCP load balancer (HAProxy, nginx stream module, or a cloud LB) in front of the agent pool. Point your application at the load balancer with `NIGHTOWL_INGEST_URI` — the `host:port` your app transmits telemetry to:
 
 ```env
-NIGHTOWL_AGENT_HOST=agent-lb.internal
+# On your application (the instrumented app)
+NIGHTOWL_INGEST_URI=agent-lb.internal:2407
+```
+
+```env
+# On each agent host (what the agent binds/listens on)
+NIGHTOWL_AGENT_HOST=0.0.0.0
 NIGHTOWL_AGENT_PORT=2407
 ```
+
+<Note>
+  `NIGHTOWL_INGEST_URI` (app side) and `NIGHTOWL_AGENT_HOST` (agent side) are two different knobs. `NIGHTOWL_AGENT_HOST` only controls the address the agent **binds** to — set it to `0.0.0.0` (or a specific interface) so the agent accepts connections from other hosts. `NIGHTOWL_INGEST_URI` controls where the **app transmits**. Both default to loopback, which is why a co-located single-host install needs neither.
+</Note>
 
 Use a least-connections balancing policy. Agents are stateless from the app's perspective — any agent can accept any payload — so there's no sticky-session concern.
 
