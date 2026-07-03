@@ -9,14 +9,13 @@ This mirrors how [Laravel Nightwatch runs on Vapor](https://nightwatch.laravel.c
 
 ## How it fits together
 
-```
-┌────────────────────────┐        ┌────────────────────────┐
-│ Vapor app (Lambda)     │        │ Agent host (EC2/Forge) │
-│ laravel/nightwatch +   │─TCP───▶│ php artisan            │        ┌──────────────┐
-│ nightowl/agent         │ 2407   │ nightowl:agent         │──COPY─▶│ Your Postgres│
-│ NIGHTOWL_INGEST_URI ───┼─priv.─▶│ NIGHTOWL_AGENT_HOST=   │        └──────────────┘
-│   = 10.0.0.5:2407      │  net   │   0.0.0.0              │
-└────────────────────────┘        └────────────────────────┘
+```mermaid
+flowchart LR
+    A["Vapor app · Lambda<br/>laravel/nightwatch + nightowl/agent<br/>NIGHTOWL_INGEST_URI = 10.0.0.5:2407"]
+    B["Agent host · EC2 / Forge<br/>php artisan nightowl:agent<br/>NIGHTOWL_AGENT_HOST = 0.0.0.0"]
+    C[("Your PostgreSQL")]
+    A -->|"TCP :2407 · private network"| B
+    B -->|"COPY"| C
 ```
 
 The Vapor app **collects** telemetry and transmits it over TCP. The agent host **buffers and drains** it to your PostgreSQL database. Only the agent host holds your database credentials and writes to Postgres — the Lambda functions never touch it.
