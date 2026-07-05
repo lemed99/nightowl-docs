@@ -9,6 +9,12 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="July 5, 2026" tags={["Dashboard", "API"]}>
+  **See how much space NightOwl is using in your database**
+
+  - App settings has a new **Storage** tab showing the on-disk footprint of your NightOwl telemetry in your own PostgreSQL — a total, plus a per-table breakdown (requests, jobs, queries, exceptions, and the rest) with indexes included. It reads the database's own size catalog rather than scanning your tables, so it's instant no matter how much history you've collected, and it only ever reports NightOwl's own `nightowl_*` tables — never the size of your application data or your database as a whole.
+</Update>
+
 <Update label="July 3, 2026" tags={["Agent", "API", "Dashboard", "Performance"]}>
   **Run NightOwl on Laravel Vapor, and faster wide time-range pages**
 
