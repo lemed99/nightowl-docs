@@ -9,6 +9,15 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="July 6, 2026" tags={["Agent"]}>
+  **Dashboard counts no longer drop to zero after updating the agent**
+
+  - **Fixed: after updating the agent and running `php artisan nightowl:migrate`, dashboard numbers like jobs, authenticated users, and mail could read 0** even though your data was intact. Migrate created the pre-aggregated summary tables the dashboard reads from but left them empty until you separately ran `nightowl:backfill-rollups`, and the dashboard reads an empty summary as zero. Migrate now populates those tables from your existing telemetry automatically, so the counts are right as soon as it finishes. Nothing was ever lost — only the wide-range view was affected. (Pass `--no-backfill` if you'd rather backfill manually on a very large database.)
+  - **The agent won't duplicate telemetry if its local disk fills up.** When the agent's local buffer disk is full, data it had already saved to your database could be written a second time. The agent now pauses draining until the disk is writable again instead of re-sending, and the stall is now visible on the health page rather than silent.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then `php artisan nightowl:migrate` (which now backfills the summary tables for you) and restart the agent. See the [agent changelog (1.2.10)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#1210---2026-07-06) for details.
+</Update>
+
 <Update label="July 5, 2026" tags={["Dashboard", "API"]}>
   **See how much space NightOwl is using in your database**
 
