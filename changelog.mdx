@@ -9,6 +9,16 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="July 8, 2026" tags={["Agent"]}>
+  **The agent no longer over-counts telemetry on some databases**
+
+  - **Fixed: on certain setups the agent could write the same requests to your database many times over** — inflating request and query counts (by tens to hundreds of times) and filling your database far faster than your real traffic would. After saving a batch of telemetry, the agent marked it "already sent" in a single operation that older SQLite versions reject as too large; the mark failed, so the agent re-sent the same batch on every cycle. It now records that progress in small chunks that work on any SQLite version. Your capture and batch-size settings are unchanged — nothing about how much you collect changes.
+  - **The agent now refuses to start if it can't write its local buffer** — a full disk, an exhausted disk quota, a read-only mount, or the buffer file being owned by a different user than the agent runs as. Instead of starting and silently re-sending data, it stops with a message telling you exactly what to fix. Together with the July 6 change, a buffer the agent can't write can no longer cause duplicated telemetry.
+  - **`php artisan nightowl:clear` now removes all NightOwl data**, including the pre-aggregated summary tables it previously left behind. Clearing your telemetry no longer leaves wide time-range dashboard views reading stale numbers.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent (no migration needed). See the [agent changelog (1.2.11)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#1211---2026-07-08) for details.
+</Update>
+
 <Update label="July 6, 2026" tags={["Agent"]}>
   **Dashboard counts no longer drop to zero after updating the agent**
 
