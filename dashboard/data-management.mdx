@@ -43,7 +43,7 @@ The `nightowl:prune` artisan command deletes rows older than `NIGHTOWL_RETENTION
 $schedule->command('nightowl:prune')->hourly();
 ```
 
-The command issues one `DELETE … WHERE created_at < ?` per table. On PostgreSQL, follow up occasionally with `VACUUM (ANALYZE)` to reclaim disk — the command doesn't do this automatically because it may compete with production workload.
+The command issues one `DELETE … WHERE created_at < ?` per table. On PostgreSQL a `DELETE` marks rows dead rather than handing disk back: autovacuum makes that space reusable by new rows, so a table under steady ingest settles at a high-water mark instead of growing without bound. Plain `VACUUM (ANALYZE)` does **not** shrink the data file — only `VACUUM FULL` (which takes an exclusive lock) or `pg_repack` does. On a managed volume such as AWS RDS, allocated storage never shrinks back either, so size the disk for your retention window rather than expecting it to fall after a prune.
 
 ## Manual cleanup and resets
 

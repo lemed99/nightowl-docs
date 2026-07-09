@@ -3,7 +3,7 @@ title: "Issues"
 description: "Manage exception and performance issues with status tracking and bulk actions."
 ---
 
-Issues are NightOwl's triage surface. Every unhandled exception and every slow request gets grouped by fingerprint so you see one row per *problem*, not one row per occurrence. From there you assign, prioritize, discuss, and resolve — the same workflow regardless of whether the issue started as a stack trace or a p95 regression.
+Issues are NightOwl's triage surface. Every unhandled exception and every operation that crosses a duration threshold gets grouped by fingerprint so you see one row per *problem*, not one row per occurrence. From there you assign, prioritize, discuss, and resolve — the same workflow regardless of whether the issue started as a stack trace or a slow query.
 
 ## The two issue types
 
@@ -12,7 +12,7 @@ Issues are NightOwl's triage surface. Every unhandled exception and every slow r
     Grouped by stack-trace fingerprint. One issue covers every occurrence of the same bug across every request, job, or command that hit it.
   </Card>
   <Card title="Performance issues" icon="gauge">
-    Opened automatically when a route's p95 duration crosses the threshold you configure in **Settings → Thresholds**. Closed automatically when it recovers.
+    Opened automatically when a single record's duration crosses a threshold you configure in **Settings → Thresholds**. Thresholds cover routes, queries, jobs, commands, cache, mail, notifications, outgoing requests, and scheduled tasks.
   </Card>
 </CardGroup>
 
