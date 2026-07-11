@@ -9,6 +9,16 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="July 11, 2026" tags={["Agent", "Dashboard"]}>
+  **Data Management is now rollup-aware, and command/scheduled-task history survives cleanup**
+
+  - **The Data Management page was rewritten** around what each table keeps versus loses. Every data type shows its rollup coverage, so you can clear raw telemetry to reclaim disk knowing your charts, totals, and percentiles are safe. It's split into Storage / Retention / Clear tabs, with a working range delete and a one-week protected floor on the most recent data.
+  - **Commands and Scheduled Tasks now keep their aggregates when you clear the raw rows** — success/failure counts, duration charts, and percentiles are preserved. Previously, clearing them lost everything.
+  - **Fixed: malformed log timestamps could leave log rows that pruning would never delete.** Such rows now get a valid timestamp so retention can clean them up.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then in the monitored app run `php artisan nightowl:migrate` and `php artisan nightowl:backfill-rollups`, and restart the agent. See the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#1212---2026-07-11) for the exact steps.
+</Update>
+
 <Update label="July 8, 2026" tags={["Agent"]}>
   **The agent no longer over-counts telemetry on some databases**
 
