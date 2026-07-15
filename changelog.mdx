@@ -9,6 +9,15 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="July 15, 2026" tags={["Agent", "Dashboard", "API"]}>
+  **Clear guidance when NightOwl's database role can't read your tables, and faster issue counts**
+
+  - **NightOwl now tells you when its database role is missing read access.** If the role NightOwl connects with can reach your database and the `nightowl_*` tables exist, but the role was never granted `SELECT` on them, you'd previously hit a generic error on every dashboard read. Now **Test Connection** flags it directly ("Connected — no read access"), and if it's discovered while you're using the app, the dashboard sends you to a dedicated page with the exact `GRANT` to run (including default privileges so future rollup tables are covered too) instead of stranding you on a raw error.
+  - **The sidebar issues badge no longer times out on large issue tables.** The issue-count query now runs off a dedicated index in a single pass instead of scanning the full table, so the badge and issue tab counts stay fast even with a large backlog on a remote database. Requires the agent update below.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then in the monitored app run `php artisan nightowl:migrate` to create the new index (built online — it won't block the agent). See the [agent changelog (1.2.13)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#1213---2026-07-15) for details.
+</Update>
+
 <Update label="July 11, 2026" tags={["Agent", "Dashboard"]}>
   **Data Management is now rollup-aware, and command/scheduled-task history survives cleanup**
 
