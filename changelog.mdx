@@ -9,6 +9,18 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="July 16, 2026" tags={["Agent", "Dashboard", "API"]}>
+  **A network stall can no longer wedge the agent's writes, and clearing data now runs in the background**
+
+  - **Fixed: a network problem while the agent was saving telemetry could stall it for around 15 minutes.** The agent had no working timeout on writes to your database, so if the network path dropped without closing the connection, the agent sat blocked until the operating system gave up. While it was stuck, its local buffer filled and it began refusing new telemetry rather than queuing it, so data was lost rather than delayed. Writes are now bounded by a deadline on the connection itself, typically clearing a dead path in about 30 seconds and re-sending the buffered data. Nothing in the buffer is lost.
+  - **A new health diagnosis, `Drain wedged`,** names the exact database call the agent is stuck in, if it ever happens again. On Linux with libpq 12 or newer it should stay dormant — the agent warns at startup if your setup can't enforce the deadline.
+  - **Clearing data no longer needs the page open.** Deletions now run in the background: you get a progress card you can leave and come back to, on any device, plus a cancel button. Previously a large clear could run past the request limit and die halfway with nothing to tell you what had been removed.
+  - **Preview now shows which filters a table can't honour.** Filters like route or status code don't exist on every data type, so they silently didn't narrow those tables — the whole window went. Preview now marks this per table, and clearing asks you to confirm before proceeding.
+  - **Fixed: paying through Polar under a different email than your NightOwl account no longer leaves the account locked.** Checkouts now carry your account ID, so payment is matched to you regardless of the address entered on the payment form.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent (no migration needed). See the [agent changelog (1.2.14)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#1214---2026-07-16) for the tuning options and details.
+</Update>
+
 <Update label="July 15, 2026" tags={["Agent", "Dashboard", "API"]}>
   **Clear guidance when NightOwl's database role can't read your tables, and faster issue counts**
 
