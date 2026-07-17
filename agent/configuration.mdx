@@ -111,10 +111,13 @@ Both lists are applied inside the customer's PHP process before the record leave
 
 ## Retention and caching
 
-| Variable                          | Default  | Description                                                                            |
-| --------------------------------- | -------- | -------------------------------------------------------------------------------------- |
-| `NIGHTOWL_RETENTION_DAYS`         | `14`     | Default for `nightowl:prune --days=?` — nothing is deleted until the command is run    |
-| `NIGHTOWL_THRESHOLD_CACHE_TTL`    | `86400`  | Seconds to cache performance thresholds (restart to pick up changes immediately)       |
+| Variable                                 | Default  | Description                                                                            |
+| ---------------------------------------- | -------- | -------------------------------------------------------------------------------------- |
+| `NIGHTOWL_RETENTION_DAYS`                | `14`     | Default for `nightowl:prune --days=?` — nothing is deleted until the command is run    |
+| `NIGHTOWL_ROLLUP_RETENTION_DAYS`         | `90`     | Retention for the minute-granular rollup tables (pruned by `nightowl:prune`)           |
+| `NIGHTOWL_HOURLY_ROLLUP_RETENTION_DAYS`  | `366`    | Retention for the hourly rollup tier (60× sparser than minute)                         |
+| `NIGHTOWL_DAILY_ROLLUP_RETENTION_DAYS`   | `1100`   | Retention for the daily rollup tier (1440× sparser than minute)                        |
+| `NIGHTOWL_THRESHOLD_CACHE_TTL`           | `86400`  | Seconds to cache performance thresholds (restart to pick up changes immediately)       |
 
 Full retention and pruning strategy lives in [Data management](/dashboard/data-management).
 
@@ -133,7 +136,9 @@ See [Running alongside Nightwatch](/agent/running-alongside-nightwatch).
 | `nightowl:agent`             | Start the monitoring agent                          |
 | `nightowl:install`           | Publish config, create/update the schema, verify fork safety |
 | `nightowl:migrate`           | Create/update the NightOwl schema (idempotent — run on each deploy) |
-| `nightowl:prune`             | Delete monitoring data older than retention period  |
+| `nightowl:prune`             | Delete monitoring data older than retention period (drops whole expired day-partitions instantly on partitioned tables) |
+| `nightowl:partition`         | Convert existing raw telemetry tables to native daily partitioning — no data copying (except `nightowl_logs`, whose legacy text date column is rewritten); new installs are partitioned automatically |
+| `nightowl:drop-v1-histograms` | Post-transition cleanup: drop the legacy histogram columns once every rollup row carries a DDSketch — refuses to run before that, requires an agent restart after |
 | `nightowl:clear`             | Truncate all monitoring tables                      |
 | `nightowl:check-thresholds`  | Poll and dispatch threshold-breach notifications    |
 

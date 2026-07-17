@@ -35,3 +35,27 @@ The agent is only half the equation. Your PostgreSQL instance needs to keep up w
 <Note>
   These are conservative estimates. Actual storage depends on your payload sizes, how many monitoring modules you enable, and your data clearing schedule.
 </Note>
+
+## Recommended settings
+
+### idle_in_transaction_session_timeout
+
+A dropped connection through a pooler (Supabase Supavisor, PgBouncer, RDS Proxy) can leave an orphaned transaction on the server holding locks on the `nightowl_*` tables. When that happens, the agent logs `SQLSTATE[55P03]` lock timeout errors on every drain attempt and telemetry backs up in the local buffer until the orphaned session is killed.
+
+Let PostgreSQL clean these up on its own:
+
+```sql
+-- Database dedicated to NightOwl telemetry:
+ALTER DATABASE your_database SET idle_in_transaction_session_timeout = '30s';
+```
+
+This setting applies to **every** client of that database, not just the agent. If your application shares the database and legitimately holds transactions idle for longer than 30 seconds, scope it to the agent's role instead:
+
+```sql
+-- Shared database — scope to the role the agent connects as:
+ALTER ROLE your_agent_role SET idle_in_transaction_session_timeout = '30s';
+```
+
+<Note>
+  Agent versions newer than 1.2.14 apply this guard automatically on their own drain transactions (`NIGHTOWL_DB_IDLE_TXN_TIMEOUT_MS`, default 30 seconds), scoped so other clients of your database are never affected. The database-level setting remains useful as a backstop and for older agents.
+</Note>

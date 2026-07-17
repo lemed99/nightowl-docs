@@ -9,6 +9,18 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="July 17, 2026" tags={["Agent", "Performance", "Dashboard"]}>
+  **Faster long-range charts, sharper percentiles, and a lighter write load on your database**
+
+  - **Long-range charts are much faster.** NightOwl now keeps hourly and daily summaries next to the per-minute ones, so a 30- or 90-day chart reads far fewer rows — up to 1440× fewer on the widest views — instead of scanning every minute.
+  - **More accurate percentiles.** Duration percentiles (p95/p99) are now backed by a DDSketch estimator with about 1% relative error, down from roughly 2.8% on the previous histogram — with no change to how you read them.
+  - **Lighter footprint on your PostgreSQL.** A reader audit removed 24 unused indexes from the raw telemetry tables and tuned how the summary tables pack and vacuum, so the agent does less work per row it writes.
+  - **Raw tables are partitioned by day.** Pruning old telemetry becomes an instant drop of a day's partition instead of a slow delete. Existing installs convert with one command (see below).
+  - **Storage breakdown in Data Management** now reflects the tiered summaries.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then in the monitored app run `php artisan nightowl:migrate` and restart the agent. To convert an existing install's raw tables to partitioning, also run `php artisan nightowl:partition` — do this in a quiet window if your logs table is large (it rewrites that one table under a lock). See the [agent changelog (1.3.0)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#130---2026-07-17) for full details and tuning options.
+</Update>
+
 <Update label="July 16, 2026" tags={["Agent", "Dashboard", "API"]}>
   **A network stall can no longer wedge the agent's writes, and clearing data now runs in the background**
 
