@@ -18,7 +18,7 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   - **Raw tables are partitioned by day.** Pruning old telemetry becomes an instant drop of a day's partition instead of a slow delete. Existing installs convert with one command (see below).
   - **Storage breakdown in Data Management** now reflects the tiered summaries.
 
-  **Upgrading the agent:** run `composer update nightowl/agent`, then in the monitored app run `php artisan nightowl:migrate` and restart the agent. To convert an existing install's raw tables to partitioning, also run `php artisan nightowl:partition` — do this in a quiet window if your logs table is large (it rewrites that one table under a lock). See the [agent changelog (1.3.0)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#130---2026-07-17) for full details and tuning options.
+  **Upgrading the agent:** run `composer update nightowl/agent`, then in the monitored app run `php artisan nightowl:migrate` and restart the agent. Migrate populates the new hourly/daily summaries from your existing data automatically, so the faster long-range charts apply to your history too — no manual backfill step. To convert an existing install's raw tables to partitioning, also run `php artisan nightowl:partition` — do this in a quiet window if your logs table is large (it rewrites that one table under a lock). See the [agent changelog (1.3.1)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#131---2026-07-17) for full details and tuning options.
 </Update>
 
 <Update label="July 16, 2026" tags={["Agent", "Dashboard", "API"]}>
