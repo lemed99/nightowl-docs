@@ -9,6 +9,15 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="July 18, 2026" tags={["Agent", "Dashboard"]}>
+  **Pruning shows its progress, and the storage page tells the right disk story**
+
+  - **Agent: pruning a large backlog no longer looks stuck.** The first prune after converting to partitioning deletes all your pre-conversion history — previously one silent, minutes-long delete. It now deletes in bounded batches and prints progress as it goes (`--delete-chunk` tunes the batch size).
+  - **Dashboard: the Storage tab's explainer now matches your schema.** Converted apps see the real story — expired days are dropped whole and their space returns to disk, with pre-conversion history freeing as it ages past your retention window. Unconverted apps keep the previous guidance.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` — no migration needed. See the [agent changelog (1.3.2)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#132---2026-07-18) for details.
+</Update>
+
 <Update label="July 17, 2026" tags={["Agent", "Performance", "Dashboard"]}>
   **Faster long-range charts, sharper percentiles, and a lighter write load on your database**
 
