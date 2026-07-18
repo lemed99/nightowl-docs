@@ -72,7 +72,23 @@ The `nightowl:prune` artisan command deletes raw rows older than `NIGHTOWL_RETEN
 Schedule::command('nightowl:prune')->daily();
 ```
 
-The command issues one `DELETE … WHERE created_at < ?` per table. On PostgreSQL a `DELETE` marks rows dead rather than handing disk back: autovacuum makes that space reusable by new rows, so a table under steady ingest settles at a high-water mark instead of growing without bound. Plain `VACUUM (ANALYZE)` does **not** shrink the data file — only `VACUUM FULL` (which takes an exclusive lock) or `pg_repack` does. On a managed volume such as AWS RDS, allocated storage never shrinks back either, so size the disk for your retention window rather than expecting it to fall after a prune.
+### What pruning does to your disk
+
+Raw telemetry tables are **partitioned by day** — one child table per calendar day, created automatically. On a partitioned table, prune drops each fully-expired day's partition outright: the drop is instant regardless of row count, leaves no dead rows behind, and hands the disk straight back to the filesystem. Only the retention-boundary day (and, on converted installs, the pre-conversion history) is trimmed with a row `DELETE`.
+
+New installs are partitioned from the first `nightowl:migrate`. Installs that predate partitioning keep working unchanged, but stay on the row-`DELETE` path until you convert them:
+
+```bash
+php artisan nightowl:partition
+```
+
+One command, once, on the app you're monitoring — no agent restart needed, and no data is copied (the existing rows are attached as-is). The Data Management page shows a banner naming any tables still awaiting conversion.
+
+<Warning>
+  `nightowl_logs` is the one exception: its conversion rewrites the table under an exclusive lock (legacy date column), so on a large logs table run `nightowl:partition` in a quiet window — or prune logs first to shrink the rewrite. Ingest keeps buffering throughout; only log reads error until it finishes.
+</Warning>
+
+On **unconverted** tables the old PostgreSQL rules apply: a `DELETE` marks rows dead rather than handing disk back — autovacuum makes that space reusable by new rows, so a table under steady ingest settles at a high-water mark instead of growing without bound, and only `VACUUM FULL` (exclusive lock) or `pg_repack` actually shrinks the file. Either way, on a managed volume such as AWS RDS the *allocated* storage never shrinks back — partition drops free space inside the volume for anything else to use, but the provisioned size stays where it peaked.
 
 ## Manual cleanup and resets
 

@@ -24,7 +24,7 @@ Use the same credentials you entered when creating the app in the dashboard — 
 
 ### Sharing one database across environments
 
-NightOwl stamps an `environment` column (your `APP_ENV`) on every row, so you can point several app environments (local, staging, production) at **one** NightOwl database and filter them apart in the dashboard. The data is partitioned by environment; the `nightowl_*` tables themselves are shared.
+NightOwl stamps an `environment` column (your `APP_ENV`) on every row, so you can point several app environments (local, staging, production) at **one** NightOwl database and filter them apart in the dashboard. The environments are separated only by that column; the `nightowl_*` tables themselves are shared. (Unrelated to table partitioning — see [Data management](/dashboard/data-management#what-pruning-does-to-your-disk) for that.)
 
 `nightowl:install` and `nightowl:migrate` track their migration history **inside the NightOwl database**, so they're idempotent across every environment that shares it. Run `php artisan nightowl:migrate` as part of each deploy:
 
