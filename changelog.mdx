@@ -9,6 +9,17 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="July 20, 2026" tags={["Agent", "API"]}>
+  **Partition conversion survives interruption, and billing access is more reliable**
+
+  - **`nightowl:partition` is now safe to interrupt and safe to run twice.** Two runs at once no longer collide — the second reports its tables as skipped and exits `3`, leaving them untouched. A run killed outright is repaired by the agent within about a minute, instead of leaving a table that rejects every write until you found it by hand.
+  - **It refuses to run through a transaction pooler.** Pointed at PgBouncer or Supavisor in transaction mode, the command now stops with an explanation instead of converting unsafely. Point it at your database port.
+  - **Clearer results.** New exit code `4` means every table converted but some daily partitions are still owed — nothing is lost, and a running agent creates them within the hour. Exit `1` now means a table genuinely failed.
+  - **Billing: revoked and recovered subscriptions are tracked correctly.** A failed renewal that you then fix restores access immediately, webhooks that arrive out of order can no longer undo a newer decision, and an account that subscribed and lapsed is no longer reported back to itself as being on a trial.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent — no migration needed. See the [agent changelog (1.4.1)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#141---2026-07-20) for details.
+</Update>
+
 <Update label="July 19, 2026" tags={["Agent", "Dashboard"]}>
   **Know when you need more workers — concurrency charts and a saturation alert**
 
