@@ -57,6 +57,8 @@ NIGHTOWL_DB_SSLMODE=prefer
   `NIGHTOWL_APP_ID` is the connected-app ID, shown alongside the token after you create the app. The agent embeds it in alert payloads so the **View issue** link in emails and webhooks points directly at the issue page. Without it, links fall back to the generic dashboard root.
 
   If you're running NightOwl [alongside Nightwatch's hosted agent](/agent/running-alongside-nightwatch), you'll also set `NIGHTWATCH_TOKEN` — that's your real Nightwatch token, used by the Nightwatch SDK to reach Laravel Cloud's hosted ingest in parallel.
+
+  Besides its own health, the agent sends an hourly sample of operational statistics about the NightOwl tables in your database (row counts, sizes, scan and vacuum counters, server settings — read from PostgreSQL's catalog views, never the contents of your telemetry). This is what lets NightOwl support diagnose problems without ever asking you to run queries on your database. It's covered in the [Privacy Policy](https://usenightowl.com/privacy), and `NIGHTOWL_TABLE_STATS=false` turns it off.
 </Note>
 
 ## 4. Install NightOwl
