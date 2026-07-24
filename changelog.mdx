@@ -9,6 +9,16 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="July 20, 2026" tags={["Agent"]}>
+  **The agent migrates itself — one less step after every update**
+
+  - **Migrations run themselves.** On startup the agent applies any pending `nightowl:migrate` migrations before it accepts traffic, so schema changes arrive with the code that needs them and you no longer have to remember the migrate step after a `composer update`. It runs under a hard deadline, so a busy or locked database can never hold the ingest port closed — if the migration can't finish in time the agent starts anyway and retries on the next boot. Long rollup backfills continue in the background without delaying ingest, and are retried on the next start if one dies partway.
+  - **A heads-up when the agent is running older code than you installed.** After `composer update` the running process keeps the version it booted with. The agent now notices the newer version on disk and says so in its log, so a restart that got skipped doesn't go unnoticed. It won't restart itself — when to bounce the process stays your call.
+  - Opt-outs: `NIGHTOWL_AUTO_MIGRATE=false` (use it when the agent's database role can't run DDL), `NIGHTOWL_UPDATE_CHECK=false`.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent — the migration step now happens on boot. See the [agent changelog (1.5.0)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#150---2026-07-20) for details.
+</Update>
+
 <Update label="July 20, 2026" tags={["Agent", "API"]}>
   **Partition conversion survives interruption, and billing access is more reliable**
 
