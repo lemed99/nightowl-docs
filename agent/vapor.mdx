@@ -5,7 +5,7 @@ description: "Run NightOwl on Laravel Vapor by hosting the agent on a long-runni
 
 Laravel Vapor runs your application on AWS Lambda, where functions are stateless and short-lived. The NightOwl agent is a long-running daemon with a local SQLite buffer, so it can't run inside a Lambda invocation. The supported pattern is a two-host split: run the agent on a long-running server in the same private network, and point your Vapor app at it with `NIGHTOWL_INGEST_URI`.
 
-This mirrors how [Laravel Nightwatch runs on Vapor](https://nightwatch.laravel.com/docs/guides/vapor) — the agent lives on a persistent instance, and the serverless app transmits to it over the private network.
+This mirrors how [Laravel Nightwatch runs on Vapor](https://nightwatch.laravel.com/docs/guides/vapor) — the agent lives on a persistent instance, and the serverless app transmits to it over the private network. The same split works for ordinary servers too — see [Dedicated monitoring server](/agent/remote-agent).
 
 ## How it fits together
 

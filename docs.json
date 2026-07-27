@@ -33,6 +33,7 @@
               "agent/configuration",
               "agent/filtering-and-context",
               "agent/production-deployment",
+              "agent/remote-agent",
               "agent/vapor",
               "agent/running-alongside-nightwatch",
               "agent/multiple-instances",
