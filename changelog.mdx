@@ -9,6 +9,19 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="July 30, 2026" tags={["Agent"]}>
+  **An upgrade could stop the agent accepting telemetry on a high-volume app**
+
+  If you upgraded to 2.0 on a busy application, please take this one.
+
+  - **The post-upgrade summary rebuild could lock out the drain.** After an upgrade the agent rebuilds the per-minute summaries behind the wide-range charts. It worked through history in fixed time slices, and a time slice is a poor guess at how much work it contains: on an app writing tens of thousands of rows a minute, one slice could hold a summary table long enough that the agent's own writer couldn't get in. Telemetry then queued on disk, correctly and safely, until the buffer hit its limit — after which the agent began refusing new telemetry outright, and that data is not recoverable. Slices are now measured rather than guessed, and resized continuously so the writer is never locked out for more than about a second. On the workload that reproduced this, failed writes went from 4 in 8 to 0 in 56, and the longest period with no telemetry written at all went from 23.6 seconds to none.
+  - **Contention no longer costs you telemetry.** Independently of the above, a write that can't get at a summary table now stores its raw telemetry anyway and notes what summaries it still owes. The next `nightowl:migrate` rebuilds them. Previously the whole batch was postponed, which is what allowed the queue to build in the first place — so the worst case is now a temporary dip in a wide-range chart rather than data you never get back.
+  - **Two new health signals.** Both of these states were previously visible only in the agent's own log file. The agent now reports when it owes a summary repair, naming the tables and the command that fixes them, and reports while a post-upgrade rebuild is still running — as information, escalating to a warning after six hours, by which point the likelier explanation is that it never finished.
+  - **New: `NIGHTOWL_AUTO_BACKFILL=false`** if you would rather run the rebuild yourself in a maintenance window. Leave it on unless you have a reason: an empty summary table makes wide-range charts read zero rather than falling back to raw telemetry, and only this pass fills it. With it off, the agent tells you each boot which tables are still empty.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent. If your dashboard is showing a gap in any wide-range chart from an earlier 2.0 upgrade, run `php artisan nightowl:migrate` afterwards to rebuild the affected summaries. See the [agent changelog (2.0.1)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#201---2026-07-30) for details.
+</Update>
+
 <Update label="July 29, 2026" tags={["Agent", "Dashboard", "Performance"]}>
   **NightOwl agent 2.0 — a new storage format, and a drain that survives a database outage**
 
