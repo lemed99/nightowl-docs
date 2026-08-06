@@ -9,6 +9,15 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="August 6, 2026" tags={["Agent", "API", "Performance"]}>
+  **Summaries could go missing when several servers report to one database, and wide-range list pages were doing twice the work**
+
+  - **Running the agent on more than one server could silently lose summary data.** If two or more of your app servers drain into the same NightOwl database, each one writes its per-minute summaries in whatever order that batch happened to arrive in. When two batches covered any of the same summary rows, they took the rows in opposite orders, PostgreSQL detected the standoff and killed one of them outright. The killed batch lost its whole set of summaries. Nothing appeared to be wrong: the raw telemetry from that batch had already been stored, so counts and lists stayed correct and only the wide-range charts, which read the summaries, came up short. Every writer now takes the rows in the same fixed order, so overlapping batches wait for each other instead. You only need this if you run more than one agent against one database — a single agent was never affected, whatever `NIGHTOWL_DRAIN_WORKERS` was set to.
+  - **List pages over long ranges are much faster, and some no longer time out.** Any grouped list — routes, queries, jobs, cache keys, mail, notifications, commands, scheduled tasks, exceptions, users — was computing its totals twice for every page you loaded: once to count how many groups there were, once to actually build the page. On a database with a lot of distinct keys, the doubled work is what pushed a 30-day list past the statement timeout and left you with an error instead of a table. Counting now skips the arithmetic it never needed. Separately, those lists were reading finer-grained summaries than they had any use for, because they were sharing the chart's choice of granularity even though a list has no time axis at all. A 30-day list now reads about 30 daily summary rows per group instead of about 720 hourly ones. Charts are unchanged, so the numbers on a page still agree with each other.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent. No migration and no new configuration. The list improvements are on the hosted dashboard already and need nothing from you. See the [agent changelog (2.1.1)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#211---2026-08-06) for details.
+</Update>
+
 <Update label="July 31, 2026" tags={["Agent", "API", "Performance"]}>
   **A summary table could stop updating silently, and wide-range charts time out**
 
