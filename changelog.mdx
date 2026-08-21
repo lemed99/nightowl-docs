@@ -9,6 +9,14 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="August 21, 2026" tags={["Agent"]}>
+  **The agent could accept no connections on servers with the `ext-uv` PHP extension installed**
+
+  If the `uv` PHP extension is loaded — common on servers running Laravel Reverb, whose docs recommend it — the agent could go deaf: the process ran, the ports were bound, the supervisor saw it as healthy, but no telemetry ever arrived and nothing was logged anywhere. Your application was never slowed down (the SDK is built to fail open rather than block a request), but everything it sent was silently dropped. The cause: with `ext-uv` present, the agent's event loop library silently switches to a libuv-backed loop, which keeps its bookkeeping in a kernel object that the agent's worker processes share with the parent — when a worker closed its inherited copy of the listening socket, it unregistered the parent's listener too. Depending on the libuv version this hit at startup or on the first drain-worker restart, so an agent could work for days and then fall silent after a routine restart. The agent now pins the fork-safe select loop regardless of which extensions the host has loaded, so `ext-uv` stays available to Reverb and stops affecting the agent. There is no performance cost: every published throughput number was already measured on the select loop. Thanks to [@refringe](https://github.com/refringe) for the exceptional report and root-cause analysis in [issue #6](https://github.com/lemed99/nightowl-agent/issues/6).
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent. No migration and no new configuration. See the [agent changelog (2.3.1)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#231---2026-08-21) for details.
+</Update>
+
 <Update label="August 14, 2026" tags={["Agent", "API"]}>
   **Slack notifications arrive with no preview, and a repair for oversized cache summary tables**
 
