@@ -9,6 +9,14 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="August 26, 2026" tags={["Dashboard"]}>
+  **Team members on a paid account were redirected away from Agent Health and Data Management**
+
+  If you were invited onto someone else's team and your own account was on the Hobby plan, the Agent Health and Data Management pages were unreachable. Both links appeared in the sidebar, and clicking either one sent you straight back to the app overview with no explanation. The pages were never restricted to you: NightOwl bills these features to the account that owns the app, so a Team or Agency owner's apps include them for everyone invited to that team, and the API was answering those requests correctly the whole time. The dashboard was asking two different questions — the sidebar asked what the app's owner pays for, the page itself asked what you pay for — and the answers only diverged for people invited into a plan better than their own. Both now read the owner's plan. Team owners, and invitees whose own plan already covered these pages, were never affected.
+
+  This one is already live on the dashboard and needs nothing from you.
+</Update>
+
 <Update label="August 21, 2026" tags={["Agent"]}>
   **The agent could accept no connections on servers with the `ext-uv` PHP extension installed**
 
