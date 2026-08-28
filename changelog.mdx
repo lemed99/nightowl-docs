@@ -9,6 +9,18 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="August 28, 2026" tags={["Agent", "Performance"]}>
+  **NightOwl's summary tables were being cleaned continuously, costing your database tens of gigabytes an hour in disk reads**
+
+  Every drain writes three levels of summary at once: per-minute, per-hour, and per-day. All three receive the same number of updates, but the daily table holds up to 1,440 times fewer rows than the per-minute one. NightOwl told PostgreSQL to clean each summary table once 2% of its rows had been superseded, which is right for a table with a million rows and wrong for one with a few hundred — on a daily table, 2% is a few dozen rows, and that threshold is crossed within seconds. PostgreSQL re-read those tables from disk about once a minute, day and night.
+
+  On one customer database, a 574-row daily table had been cleaned 3,227 times against 32 for the 1.3-million-row per-minute table sitting beside it, and the summary tables together were reading roughly 45 GB an hour that nothing needed. That competes for the same memory and disk the agent uses to write your telemetry, so on a database without much headroom it showed up as telemetry arriving late during your busiest hours, and a gap at the right-hand edge of your charts that filled in a few minutes later. No telemetry was lost to this. The threshold on the hourly and daily tables is now a fixed number of rows instead of a percentage, so it stops getting stricter as a table gets smaller. Per-minute tables are unchanged.
+
+  Also fixed: `php artisan nightowl:repair-cache-rollup-keys` was resetting the storage tuning on the cache summary tables it rebuilt, leaving them on PostgreSQL's defaults instead of NightOwl's. If you have ever run that command, this release puts those settings back.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then `php artisan nightowl:migrate`, and restart the agent. The migration only changes table settings — it moves no data and is safe to run while the agent is draining. See the [agent changelog (2.3.3)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#233---2026-08-28) for details.
+</Update>
+
 <Update label="August 26, 2026" tags={["Dashboard"]}>
   **Team members on a paid account were redirected away from Agent Health and Data Management**
 
