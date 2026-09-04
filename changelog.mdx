@@ -9,6 +9,22 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="September 4, 2026" tags={["Agent", "Dashboard"]}>
+  **You can now search your logs by what's in the context, not just the message**
+
+  A Laravel log line has two halves. `Log::error('Payment failed', ['order_id' => 8412])` writes the message `Payment failed` and the context `['order_id' => 8412]`. NightOwl has always stored and displayed both, but the search box on the Logs page only ever matched the message — so searching for `8412` to find that order's log line came back empty, as if it had never been logged.
+
+  The reason is that NightOwl stores log context compressed, and PostgreSQL cannot decompress it while running a query, so there was no way to look inside it. Rather than search the message and quietly pretend that was the whole answer, the page now tells you when that is happening: search your logs and you'll see a "Narrowed search" note saying the results matched on the message alone.
+
+  To make context searchable, set `NIGHTOWL_LOG_CONTEXT_SEARCHABLE=true` in the app your agent runs in and restart it. From then on, searching `8412` finds that line.
+
+  This trades storage for searchability, and how much depends on what your app logs — small contexts barely compress at all, large ones compress well. Before turning it on, run `php artisan nightowl:backfill-log-context --dry-run`: it measures your own logs and reports what they occupy now and what they would occupy uncompressed, without changing anything.
+
+  Turning the setting on only affects logs written from that point. To make the logs you already have searchable, run `php artisan nightowl:backfill-log-context`. It converts newest first, so the logs you're most likely to search work first, and you can stop it and re-run it later to pick up where it left off. The "Narrowed search" note keeps appearing for the date ranges it hasn't reached yet, so you always know which of your history the search actually covered. `--since` limits how far back it goes if you only care about recent logs.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then `php artisan nightowl:migrate`, and restart the agent. The migration adds one empty column and moves no data. Nothing changes until you turn the setting on. See the [agent changelog (2.4.0)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#240---2026-09-04) for details.
+</Update>
+
 <Update label="August 28, 2026" tags={["Agent", "Performance"]}>
   **NightOwl's summary tables were being cleaned continuously, costing your database tens of gigabytes an hour in disk reads**
 

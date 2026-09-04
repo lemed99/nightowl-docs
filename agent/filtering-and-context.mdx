@@ -69,6 +69,12 @@ Good things to stash in context:
 
 Don't stash secrets in `Context` — those entries are passed through verbatim.
 
+### Searching log context
+
+The context you attach to a **log** — the array in `Log::error('Payment failed', ['order_id' => 8412])` — is shown on the log's detail page, but the Logs page search box does not match inside it by default. Log context is stored compressed, and PostgreSQL cannot decompress it while running a query, so the search falls back to the message and the page shows a "Narrowed search" note explaining that.
+
+Set `NIGHTOWL_LOG_CONTEXT_SEARCHABLE=true` to store it uncompressed and make it searchable. It trades storage for that, and existing logs need converting — see [Searchable log context](/agent/configuration#searchable-log-context) for the sizing check and the conversion command.
+
 ## Redaction
 
 PII redaction lives in `laravel/nightwatch` and runs inside the customer's PHP process before the payload is shipped to the agent. Configure it in `.env`:

@@ -121,6 +121,69 @@ Both lists are applied inside the customer's PHP process before the record leave
 
 Full retention and pruning strategy lives in [Data management](/dashboard/data-management).
 
+## Searchable log context
+
+By default a log's `context` is stored compressed. PostgreSQL cannot decompress it while running a query, so the dashboard's log search matches the **message only** and shows a "Narrowed search" note saying so.
+
+| Variable                             | Default | Description                                                                 |
+| ------------------------------------ | ------- | --------------------------------------------------------------------------- |
+| `NIGHTOWL_LOG_CONTEXT_SEARCHABLE`    | `false` | Store log context uncompressed so log search can match inside it            |
+
+```env
+NIGHTOWL_LOG_CONTEXT_SEARCHABLE=true
+```
+
+With this on, searching your logs for `8412` finds the line written by
+`Log::error('Payment failed', ['order_id' => 8412])`, not just lines with `8412` in the message.
+
+Restart the agent after changing it.
+
+The agent only stores context uncompressed once its schema has the column for it (added by `php artisan nightowl:migrate`, which the agent normally runs itself on boot). If the setting is on but the column is missing, the agent keeps storing compressed context, logs a warning saying so, and the dashboard keeps showing the "Narrowed search" note — nothing breaks, it just is not searchable yet. Run the migration and restart.
+
+<Warning>
+This trades storage for searchability, and how much depends entirely on what your app logs — small contexts barely compress at all (under about 256 bytes, compression can make them *larger*), while large ones compress well. Measure yours before deciding:
+
+```bash
+php artisan nightowl:backfill-log-context --dry-run
+```
+
+That reports what your context currently occupies and what it would occupy uncompressed, and changes nothing.
+</Warning>
+
+### Making existing logs searchable
+
+Turning the flag on is **forward-only** — it changes what the agent stores from that moment. Logs already on disk stay compressed and stay unsearchable, and because NightOwl retention is typically long, waiting for them to age out is not a real answer. Convert them:
+
+```bash
+php artisan nightowl:backfill-log-context
+```
+
+It works newest-first, so the logs you are most likely to search become searchable first, and you can stop it at any time and re-run later to continue — an interrupted run leaves a smaller searchable range, never a wrong one. The dashboard keeps showing the "Narrowed search" note for ranges it has not reached yet.
+
+Useful options:
+
+| Option        | Description                                                                       |
+| ------------- | --------------------------------------------------------------------------------- |
+| `--dry-run`   | Measure against your own rows and change nothing                                   |
+| `--since=`    | Only convert this far back (e.g. `--since='2026-06-01'`) to cap the cost           |
+| `--vacuum`    | Reclaim the rewritten rows immediately instead of leaving it to autovacuum          |
+
+<Note>
+A full conversion rewrites every log row in range, which leaves dead rows behind until autovacuum (or `--vacuum`) reclaims them, so the table temporarily needs more disk than the figures above. On a large history, run it deliberately rather than during a deploy. `--since` is usually the better trade: most people search recent logs.
+</Note>
+
+### If the setting is turned off again
+
+Removing `NIGHTOWL_LOG_CONTEXT_SEARCHABLE` (a deploy that drops the variable, for instance) makes the agent store compressed context again, and log search goes back to matching the message only — including over the history you converted. That data is not lost or changed; the search simply cannot cover a range that has compressed logs in it.
+
+To get it back, set the variable again, restart the agent, and re-run:
+
+```bash
+php artisan nightowl:backfill-log-context
+```
+
+This second run is quick — your already-converted logs need no conversion, so it only re-establishes the searchable range over them.
+
 ## Parallel mode
 
 | Variable                            | Default | Description                                                    |
@@ -139,6 +202,7 @@ See [Running alongside Nightwatch](/agent/running-alongside-nightwatch).
 | `nightowl:prune`             | Delete monitoring data older than retention period (drops whole expired day-partitions instantly on partitioned tables) |
 | `nightowl:partition`         | Convert existing raw telemetry tables to native daily partitioning — no data copying (except `nightowl_logs`, whose legacy text date column is rewritten); new installs are partitioned automatically |
 | `nightowl:drop-v1-histograms` | Post-transition cleanup: drop the legacy histogram columns once every rollup row carries a DDSketch — refuses to run before that, requires an agent restart after |
+| `nightowl:backfill-log-context` | Convert already-stored log context to the searchable uncompressed form (`--dry-run` to measure first) |
 | `nightowl:clear`             | Truncate all monitoring tables                      |
 | `nightowl:check-thresholds`  | Poll and dispatch threshold-breach notifications    |
 
