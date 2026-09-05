@@ -22,7 +22,7 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
 
   Turning the setting on only affects logs written from that point. To make the logs you already have searchable, run `php artisan nightowl:backfill-log-context`. It converts newest first, so the logs you're most likely to search work first, and you can stop it and re-run it later to pick up where it left off. The "Narrowed search" note keeps appearing for the date ranges it hasn't reached yet, so you always know which of your history the search actually covered. `--since` limits how far back it goes if you only care about recent logs.
 
-  **Upgrading the agent:** run `composer update nightowl/agent`, then `php artisan nightowl:migrate`, and restart the agent. The migration adds one empty column and moves no data. Nothing changes until you turn the setting on. See the [agent changelog (2.4.0)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#240---2026-09-04) for details.
+  **Upgrading the agent:** run `composer update nightowl/agent`, then `php artisan nightowl:migrate`, and restart the agent. The migration adds one empty column and moves no data. Nothing changes until you turn the setting on. See the [agent changelog (2.4.1)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#241---2026-09-05) for details.
 </Update>
 
 <Update label="August 28, 2026" tags={["Agent", "Performance"]}>
