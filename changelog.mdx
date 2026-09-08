@@ -9,6 +9,20 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="September 8, 2026" tags={["Agent"]}>
+  **A single long route or file path could stop your telemetry from arriving at all**
+
+  NightOwl stores each distinct route, SQL origin and label once and refers back to it, which is what keeps your telemetry small. Four of those columns were sized at 512 characters. If your application produced a route path, controller action, query file path or label longer than that — a deeply nested resource route, a long namespace, a generated route group — PostgreSQL refused the write, and the agent retried the same batch on every loop instead of moving past it.
+
+  The effect was worse than one missing row. Everything queued behind that batch stopped too, so telemetry simply stopped arriving from the moment the first long value appeared, and the dashboard showed a hard stop at that date. Nothing was lost: the buffered telemetry stays on your own server and drains as soon as the agent can write it again. Upgrading is enough to release it.
+
+  The agent now trims any value that will not fit and writes the batch anyway, so no column width can stop your drain, and it names the exact column in its log if it ever has to. This release also widens the route path, controller action and query file columns so long values are stored in full rather than trimmed.
+
+  A failure of this kind also now reaches your Agent Health page, naming the error code and the table it happened on. Until now it was recorded as a local buffering problem, so no diagnosis was raised and there was nothing on the page to see.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then `php artisan nightowl:migrate`, and restart the agent. The restart matters here — the running agent reads your column widths once and keeps them, so it will not notice the wider columns until it starts again. The migration changes three column types and moves no data; it is safe to run while the agent is draining. See the [agent changelog (2.4.2)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#242---2026-09-08) for details.
+</Update>
+
 <Update label="September 4, 2026" tags={["Agent", "Dashboard"]}>
   **You can now search your logs by what's in the context, not just the message**
 
