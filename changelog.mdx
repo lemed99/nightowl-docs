@@ -9,14 +9,46 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="September 9, 2026" tags={["Agent"]}>
+  **If yesterday's fix did not stop your telemetry cutting out, this is why**
+
+  Yesterday's release added a safeguard that trims any value too long for its column, so no single oversized route or file path can stop your drain. It worked where your NightOwl tables live in the `public` schema. If they are reached through a database search path instead, the safeguard measured the wrong tables, found nothing to trim, and the drain still stopped on the first long value — and in that state nothing on that connection was being trimmed at all. The safeguard now measures the table it actually writes to, the same way PostgreSQL resolves the name. NightOwl's tables are expected in the `public` schema: if yours live only somewhere else, raw telemetry will arrive but the summary tables the charts read from are not maintained there, and `nightowl:migrate` and the cleanup commands act on `public` — that layout is not supported. (During review we caught a candidate fix that would have broken the opposite layout — a schema named after your database role, which PostgreSQL's default search path anticipates — before it shipped.)
+
+  Two related fixes. A column widened while the agent was running was not noticed until a restart, so an agent started before the migration kept trimming to the old width; widths are now re-checked once a minute. And a value trimmed earlier is now repaired in place the next time that route or query appears, in the running agent, within a minute of the migration — including for anything first seen in the gap between `composer update` and `php artisan nightowl:migrate`.
+
+  One thing to check if you run the agent under a restricted database role: the agent now needs `UPDATE` on `nightowl_dict_route` and `nightowl_dict_sql` (the rollup, issue and user tables already required it; the raw telemetry tables still need no `UPDATE`). Without it the drain stops with `permission denied`. Column-level grants are enough: `GRANT UPDATE (method, domain, path, name, action, methods) ON nightowl_dict_route` and `GRANT UPDATE (file) ON nightowl_dict_sql`.
+
+  **Livewire pages no longer inflate your route list**
+
+  Livewire's update endpoint reports every component in the request as the route's "action", one entry per component — a page whose 78 copies of one component all updated in the same tick reported the same class name 78 times, and every variation was stored as a new route. NightOwl now reduces that list to its distinct components, in a stable order, before storing it. Pages that differ only in how many of a component they show now share one entry. Pages that contain genuinely different sets of components remain separate; if your pages vary their components a lot, use the ignore setting below.
+
+  **You can now tell the agent to skip routes entirely**
+
+  Set `NIGHTOWL_IGNORE_ROUTES` to a comma-separated list of patterns, and matching requests are never recorded, together with the queries, logs and cache events they made:
+
+  ```
+  NIGHTOWL_IGNORE_ROUTES="*livewire.update,horizon/*"
+  ```
+
+  Patterns are matched against the route's path, name and action; `*` is the wildcard. Use the route name for Livewire — `*livewire.update` matches both Livewire 3 (`default.livewire.update`) and Livewire 4 (`default-livewire.update`), while `livewire/*` matches only Livewire 3's path. A skipped request never takes an exception with it (you asked to ignore a noisy route, not its errors — the exception's link to its request will lead nowhere), nor a job it dispatched, nor anything that job recorded while running.
+
+  Worth knowing before you use it: this is not sampling. Nothing about a skipped request reaches your database, so those requests are absent from your request counts, your threshold alerts and your error rate — **in whichever direction those routes were heading**. Skip a busy endpoint that always succeeds and your error rate goes up. Skip one that is failing and your error rate goes down and hides the problem. So the agent counts what it skips and, on the Agency plan's app cards, shows it beside the rate with that caveat. On an older agent the line does not appear, which means it cannot tell you, not that nothing was skipped; the same is true under `--driver=sync`, which has no health reporting. One limit: a request that produces more than 500 records of any kind ships the first 500 in a separate payload before the request itself, and if that payload drains first those rows are kept without their request.
+
+  **Reclaiming route entries you no longer need**
+
+  `php artisan nightowl:gc-dict-routes` removes stored routes that no request refers to any more, for a route list a Livewire app inflated before this release. Run `--dry-run` first. **Stop the agent everywhere it runs before running it** — a running agent keeps route references in memory and can write one after the row is gone. The command checks for a running agent, but it cannot see an agent on another machine or one started with `--driver=sync`, and because stopping the agent leaves fresh files behind, it will refuse for up to ten minutes after you stop it and tell you how long to wait. Afterwards run `VACUUM FULL nightowl_dict_route` to actually return the space — plain `VACUUM` will not, because the removed rows sit between live ones. The command holds a lock on your request table while it runs; if your scheduled `nightowl:prune` starts during that time it waits a few seconds, leaves that table for its next run and carries on, rather than queuing behind the cleanup — a queued prune would block the dashboard's reads of that table until the cleanup finished.
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then `php artisan nightowl:migrate`, and restart the agent. See the [agent changelog (2.4.3)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#243---2026-09-09) for details.
+</Update>
+
 <Update label="September 8, 2026" tags={["Agent"]}>
   **A single long route or file path could stop your telemetry from arriving at all**
 
   NightOwl stores each distinct route, SQL origin and label once and refers back to it, which is what keeps your telemetry small. Four of those columns were sized at 512 characters. If your application produced a route path, controller action, query file path or label longer than that — a deeply nested resource route, a long namespace, a generated route group — PostgreSQL refused the write, and the agent retried the same batch on every loop instead of moving past it.
 
-  The effect was worse than one missing row. Everything queued behind that batch stopped too, so telemetry simply stopped arriving from the moment the first long value appeared, and the dashboard showed a hard stop at that date. Nothing was lost: the buffered telemetry stays on your own server and drains as soon as the agent can write it again. Upgrading is enough to release it.
+  The effect was worse than one missing row. Everything queued behind that batch stopped too, so telemetry simply stopped arriving from the moment the first long value appeared, and the dashboard showed a hard stop at that date. What was buffered stays on your own server and drains once the agent can write again — but the buffer has a limit (100,000 payloads by default), and once a wedge fills it the agent starts refusing new telemetry, which is gone. If your agent log shows "Back-pressure ON", some was.
 
-  The agent now trims any value that will not fit and writes the batch anyway, so no column width can stop your drain, and it names the exact column in its log if it ever has to. This release also widens the route path, controller action and query file columns so long values are stored in full rather than trimmed.
+  The agent now trims any value that will not fit and writes the batch anyway, and names the exact column in its log if it ever has to. (Correction, September 9: this release only measured tables in the `public` schema — see the next entry if yours are elsewhere.) This release also widens the route path, controller action and query file columns so long values are stored in full rather than trimmed.
 
   A failure of this kind also now reaches your Agent Health page, naming the error code and the table it happened on. Until now it was recorded as a local buffering problem, so no diagnosis was raised and there was nothing on the page to see.
 
