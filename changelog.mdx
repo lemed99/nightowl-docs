@@ -9,6 +9,12 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="September 10, 2026" tags={["Agent"]}>
+  **If `composer update` failed on the agent with "Too few arguments to function Laravel\Nightwatch\Ingest::__construct()", 2.4.4 fixes it**
+
+  Nightwatch 1.29 changed how its ingest is constructed, and the agent still built it the old way, so updating both packages together stopped on `package:discover` before anything was installed. Nothing was changed on your side and no telemetry was lost: the update never completed. Run `composer update nightowl/agent` again to pick up 2.4.4, then `php artisan nightowl:migrate` and restart the agent as usual. If you run the agent alongside Nightwatch's own reporting, Nightwatch's new ingest listeners fire once per event, not twice.
+</Update>
+
 <Update label="September 9, 2026" tags={["Agent"]}>
   **If yesterday's fix did not stop your telemetry cutting out, this is why**
 
