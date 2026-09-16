@@ -9,6 +9,36 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="September 16, 2026" tags={["Agent"]}>
+  **If you run the agent on more than one server against the same database, they no longer deadlock each other**
+
+  Your agent log may have shown `SQLSTATE[40P01]: Deadlock detected` every day or two, naming a summary table such as `nightowl_request_rollups` or `nightowl_job_rollups`. Each agent wrote its batch in the order the telemetry happened to arrive, so a web server (whose batches start with a request) and a queue server (whose batches start with a query or a job) could lock the same rows in opposite orders, and PostgreSQL cancelled one of them. No telemetry was lost, because the cancelled batch was written again on the next attempt. Every agent now writes in the same fixed order, and the same fix covers the issues and users tables, which had the same problem.
+
+  **Upgrade every agent that writes to the same database.** An agent still on an older version keeps its old write order, so it can go on deadlocking against the upgraded ones until the last one is updated.
+
+  **One deadlock no longer leaves a warning on your Agent Health page until you restart**
+
+  A deadlock used to count as a failed batch for the rest of the agent's life, and the drain error rate was measured over that whole lifetime. On a quiet server, a single deadlock was enough to show a `DRAIN_ERRORS` warning ("Drain worker experiencing batch failures") that stayed until the agent restarted, even though nothing was failing any more. The rate now covers the last 15 minutes, so a warning clears once the drain has recovered. A deadlock is also no longer counted as a failure at all, since nothing was wrong with your data or your database.
+
+  Deadlocks are still tracked. If they keep happening, the new `DRAIN_CONTENTION` diagnosis appears. It is a warning when some batches are being cancelled, and critical when the drain is committing nothing. A single deadlock stays quiet.
+
+  **If you set a job threshold, it may now trigger slightly sooner**
+
+  Each batch used to check your job threshold twice, once against the queued jobs and once against the job runs, so a batch just over your limit could pass both checks. Both now go through a single check. Apps without a job threshold see no change.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent. No migration is needed. See the [agent changelog (2.4.6)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#246---2026-09-16) for details.
+</Update>
+
+<Update label="September 15, 2026" tags={["Agent"]}>
+  **A quiet app no longer shows a critical "rollup tables stopped being written" warning**
+
+  If your app goes more than 15 minutes without an exception, a sent mail or a scheduled command, your Agent Health page could stay degraded at a score of 75. It listed those summary tables as having stopped being written, and advised you to look for an error that did not exist. The check assumed every kind of telemetry arrives all the time, so it read "nothing happened" as "the agent stopped writing". Each summary table is now compared with its own raw data, so it is flagged only when raw rows exist that never reached it. If you worked around this by setting `NIGHTOWL_TABLE_STATS=false`, you can remove that setting, which also brings back the hourly table report.
+
+  Two smaller fixes. On PHP 8.5, the agent log no longer fills with a `pgsqlCopyFromArray() is deprecated` warning on every write. And `nightowl:backfill-rollups` no longer occasionally leaves the hourly summary one row short.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent. See the [agent changelog (2.4.5)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#245---2026-09-15) for details.
+</Update>
+
 <Update label="September 10, 2026" tags={["Agent"]}>
   **If `composer update` failed on the agent with "Too few arguments to function Laravel\Nightwatch\Ingest::__construct()", 2.4.4 fixes it**
 
