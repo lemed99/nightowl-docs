@@ -9,6 +9,29 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="September 22, 2026" tags={["Agent", "Dashboard"]}>
+  **You can now record request payloads for any response, and response bodies too**
+
+  Until now a request's payload was stored only when the response was a 500, and response bodies were never stored at all. Both limits came from Nightwatch, which NightOwl collects its telemetry through, and neither was configurable. Two new settings replace them:
+
+  ```env
+  NIGHTOWL_CAPTURE_REQUEST_PAYLOAD=true
+  NIGHTOWL_CAPTURE_RESPONSE_BODY=true
+  ```
+
+  Leaving `NIGHTOWL_CAPTURE_REQUEST_PAYLOAD` unset keeps today's behaviour, so nothing changes until you ask for it. Setting it to `true` records every request's payload; `false` records none.
+
+  Two filters narrow both, and most apps will want them. `NIGHTOWL_CAPTURE_STATUS_CODE="422,5xx"` takes exact codes and whole classes. `NIGHTOWL_CAPTURE_ROUTES="api/*"` matches a route's path, name or action, using the same patterns as `NIGHTOWL_IGNORE_ROUTES`. If a filter is set but holds nothing valid, such as a typo like `errors`, nothing is captured and the agent logs why — a mistake there will never widen capture to every request.
+
+  Payloads are redacted with your existing `NIGHTWATCH_REDACT_PAYLOAD_FIELDS` list. JSON response bodies are redacted with `NIGHTOWL_REDACT_RESPONSE_FIELDS`, which matches key names at any depth and ignores case; left unset it covers `password`, `token`, `access_token`, `refresh_token`, `api_key`, `secret` and similar. HTML, XML and plain-text bodies have no fields to redact and are stored exactly as sent, so consider the route filter before turning capture on for pages that render personal data. File downloads, streamed responses and binary types are recorded as a short marker rather than their bytes.
+
+  Captured bodies are compressed in your database like the rest of your request data, and `NIGHTOWL_CAPTURE_MAX_BYTES` caps each one if you want a ceiling (`0`, the default, means no limit). Both now appear as **Payload** and **Response** sections on a request's detail page in the dashboard.
+
+  Full details are in [Request payloads and response bodies](/agent/configuration#request-payloads-and-response-bodies).
+
+  **Upgrading the agent:** run `composer update nightowl/agent`, then `php artisan nightowl:migrate` to add the column response bodies are stored in, and restart the agent. The agent applies the migration itself at startup unless you set `NIGHTOWL_AUTO_MIGRATE=false`. Until the migration runs, requests are still recorded and only their response bodies are dropped. See the [agent changelog (2.4.7)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#247---2026-09-22) for details.
+</Update>
+
 <Update label="September 16, 2026" tags={["Agent"]}>
   **If you run the agent on more than one server against the same database, they no longer deadlock each other**
 

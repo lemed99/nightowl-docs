@@ -109,6 +109,37 @@ NIGHTWATCH_REDACT_PAYLOAD_FIELDS=_token,password,password_confirmation
 
 Both lists are applied inside the customer's PHP process before the record leaves the host, so the agent's TCP buffer and PostgreSQL drain never see the un-redacted values.
 
+## Request payloads and response bodies
+
+On its own, Nightwatch records a request's payload only when the response is a 500 (`NIGHTWATCH_CAPTURE_REQUEST_PAYLOAD`), and it never records response bodies. The NightOwl settings below replace that. Set them in your application's `.env`:
+
+| Variable                              | Default     | Description                                                                                          |
+| ------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------- |
+| `NIGHTOWL_CAPTURE_REQUEST_PAYLOAD`    | unset       | `true` records the payload of every request. `false` records none. Unset keeps Nightwatch's behaviour (500s only) |
+| `NIGHTOWL_CAPTURE_RESPONSE_BODY`      | `false`     | `true` records response bodies                                                                        |
+| `NIGHTOWL_CAPTURE_STATUS_CODE`        | empty       | Only capture for these statuses, e.g. `422,5xx`. Exact codes and classes (`4xx`) both work. Empty means every status |
+| `NIGHTOWL_CAPTURE_ROUTES`             | empty       | Only capture for these routes, e.g. `api/*,webhooks.*`. Matches the route path, name or action. Empty means every route |
+| `NIGHTOWL_CAPTURE_MAX_BYTES`          | `0`         | Cut each payload and body to this many bytes. `0` means no limit                                      |
+| `NIGHTOWL_REDACT_RESPONSE_FIELDS`     | see below   | Keys to redact in JSON response bodies                                                                |
+
+The status and route filters apply to both payloads and response bodies. Route patterns use the same syntax as `NIGHTOWL_IGNORE_ROUTES`: `*` is the only wildcard, and a leading slash is optional. If a filter is set but none of its entries is valid (a typo such as `errors`), nothing is captured and the agent logs why. A mistake in a filter will never widen capture to every request.
+
+```env
+# Capture payloads and responses for failing API calls only
+NIGHTOWL_CAPTURE_REQUEST_PAYLOAD=true
+NIGHTOWL_CAPTURE_RESPONSE_BODY=true
+NIGHTOWL_CAPTURE_STATUS_CODE=4xx,5xx
+NIGHTOWL_CAPTURE_ROUTES=api/*
+```
+
+**Redaction.** Payloads are redacted with `NIGHTWATCH_REDACT_PAYLOAD_FIELDS`, plus any `Nightwatch::redactRequests()` callback you registered. JSON response bodies are redacted with `NIGHTOWL_REDACT_RESPONSE_FIELDS`, which matches key names at any depth and ignores case. When unset, it redacts `password`, `password_confirmation`, `token`, `access_token`, `refresh_token`, `api_key`, `secret` and `client_secret`. Setting it replaces that list rather than adding to it, and setting it to an empty value turns response redaction off. HTML, XML and plain-text responses have no fields to redact, so they are stored exactly as sent. Keep that in mind before enabling capture on routes that render personal data.
+
+**What is not stored.** File downloads, streamed responses and binary content types (images, PDFs) are recorded as a short marker instead of their bytes. If a request's payload and response together exceed about 4 MB, the response (and if needed the payload) is replaced by a `TOO_LARGE` marker whatever `NIGHTOWL_CAPTURE_MAX_BYTES` says. The agent refuses a single transmission over 10 MB, and that would lose the request's queries, logs and exceptions along with the body.
+
+**Storage.** Captured bodies are compressed like the rest of your request data. Capturing every response on a busy app adds real storage to your database, so the status and route filters are the main way to keep it small.
+
+Response bodies need a new database column, added by a migration in the same agent release. The agent runs pending migrations when it starts; if you set `NIGHTOWL_AUTO_MIGRATE=false`, run `php artisan nightowl:migrate` yourself. Until the migration has run, requests are still recorded and only their response bodies are dropped. In parallel mode, Nightwatch's own copy of each request is not affected by any of these settings.
+
 ## Retention and caching
 
 | Variable                                 | Default  | Description                                                                            |

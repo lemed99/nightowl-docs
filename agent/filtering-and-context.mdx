@@ -86,7 +86,7 @@ NIGHTWATCH_REDACT_PAYLOAD_FIELDS=_token,password,password_confirmation
 
 `NIGHTWATCH_REDACT_HEADERS` strips named headers from every request record. `NIGHTWATCH_REDACT_PAYLOAD_FIELDS` recursively replaces matching keys in the request payload with a `[N bytes redacted]` marker. Both are applied at record-assembly time, so neither the agent's TCP buffer, SQLite WAL, nor PostgreSQL drain ever see the un-redacted values.
 
-Note: Nightwatch only writes the request `payload` for HTTP 500 responses, and only for `application/json` and form-encoded bodies. Response bodies are never written.
+Note: Nightwatch only writes the request `payload` for HTTP 500 responses, and only for `application/json` and form-encoded bodies, and it never writes response bodies. To capture payloads for other statuses, or response bodies, see [Request payloads and response bodies](/agent/configuration#request-payloads-and-response-bodies).
 
 ## Combining the layers
 
