@@ -9,6 +9,14 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="September 23, 2026" tags={["Dashboard", "API"]}>
+  **Reading a captured payload or response, and seeing what ran a query**
+
+  Yesterday's release let the agent record request payloads and response bodies. The request detail page now gives you something to do with them: each card has a copy button, a long body scrolls inside its card instead of pushing the rest of the page away, and an HTML response can be opened as the rendered page it was. That preview runs with scripts disabled and cannot reach your dashboard session, so a captured page can be looked at safely; it may differ from the original wherever the page depended on JavaScript.
+
+  **The Source column on a query, mail or notification now says which request, command or job ran it.** It previously showed only a badge reading "REQUEST", with no way to tell which one short of opening it. Where the URL is too long for the column, hovering shows the whole thing.
+</Update>
+
 <Update label="September 22, 2026" tags={["Agent", "Dashboard"]}>
   **You can now record request payloads for any response, and response bodies too**
 
