@@ -3,11 +3,13 @@ title: "Data Management"
 description: "Manage monitoring data retention, pruning, and storage for your application."
 ---
 
-NightOwl is a bring-your-own-database product. Your telemetry — every request, query, exception, job attempt, and log line — lives in a PostgreSQL instance you control. That gives you full ownership of retention, backups, and compliance, and it keeps storage costs decoupled from per-seat dashboard pricing.
+NightOwl is a bring-your-own-database product. Your telemetry (every request, query, exception, job attempt and log line) lives in a PostgreSQL instance you control. That gives you full ownership of retention, backups and compliance, and it keeps storage costs separate from your NightOwl plan.
+
+The **Data Management** page is on the **Team** and **Agency** plans. Deleting data from it needs the owner or admin role on the app.
 
 ## Storage model
 
-Every connected app points at one PostgreSQL database. The agent writes through SQLite's WAL buffer into ~20 `nightowl_*` tables using `COPY` for high-volume event tables and `INSERT … ON CONFLICT` for upsert tables (`nightowl_exceptions`, `nightowl_users`).
+Every connected app points at one PostgreSQL database. The agent buffers telemetry in a local SQLite file and drains it into the `nightowl_*` tables: raw events with `COPY`, issues and users with `INSERT … ON CONFLICT` upserts.
 
 Because the data lives in *your* PostgreSQL, you can:
 
@@ -18,15 +20,16 @@ Because the data lives in *your* PostgreSQL, you can:
 
 ## Raw telemetry vs. rollups
 
-Every `nightowl_*` table falls into one of three groups, and knowing which is the whole trick to managing storage.
+Every `nightowl_*` table falls into one of four groups, and knowing which is the whole trick to managing storage.
 
 | Group              | Tables                                                                                             | What it is                                                          |
 | ------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| **Raw telemetry**  | `nightowl_requests`, `nightowl_queries`, `nightowl_jobs`, `nightowl_logs`, …                        | One row per event. Almost all of your disk.                          |
-| **Rollups**        | `nightowl_request_rollups`, `nightowl_query_rollups`, `nightowl_job_rollups`, …                     | Per-minute aggregates. Tiny. What the dashboard charts actually read. |
-| **Triage & config**| `nightowl_issues`, `nightowl_issue_comments`, `nightowl_settings`, `nightowl_alert_channels`, `nightowl_users` | Never deleted by retention or by Data Management.           |
+| **Raw telemetry**  | `nightowl_requests_v2`, `nightowl_queries_v2`, `nightowl_jobs_v2`, `nightowl_logs_v2`, … and the older v1 tables without the suffix | One row per event, across 11 event types. Almost all of your disk. |
+| **Rollups**        | `nightowl_request_rollups`, `nightowl_request_hourly_rollups`, `nightowl_request_daily_rollups`, … | Per-minute, per-hour and per-day aggregates. Small. What the dashboard charts actually read. |
+| **Dictionaries**   | `nightowl_dict_string`, `nightowl_dict_sql`, `nightowl_dict_route`, `nightowl_dict_trace`           | Each distinct label, SQL statement, route and stack trace stored once. Raw v2 rows point at them by id. |
+| **Triage & config**| `nightowl_issues`, `nightowl_issue_comments`, `nightowl_issue_activity`, `nightowl_settings`, `nightowl_alert_channels`, `nightowl_users` | Never deleted by retention. Data Management removes only a `nightowl_users` row, and only for a [user-filtered deletion](#deleting-data-for-one-user). |
 
-The agent writes a rollup row alongside the raw rows as it drains. Every dashboard time range — including **1H** — buckets at 60 seconds or wider, which means the overview cards, throughput and duration charts, percentiles, and the grouped route/query/job lists are all served from the rollup tables, never from the raw events.
+The agent writes rollup rows alongside the raw rows as it drains, in the same transaction. Every dashboard time range, including **1H**, buckets at 60 seconds or wider, so the overview cards, throughput and duration charts, percentiles, and the grouped route/query/job lists are all served from the rollup tables, never from the raw events. Longer ranges read the hourly and daily tiers.
 
 **Deleting raw rows therefore costs you far less than it looks like.** What you lose is the ability to open an individual trace, filter a view by user, or read a stack trace.
 
@@ -52,20 +55,30 @@ The agent writes a rollup row alongside the raw rows as it drains. Every dashboa
 
 ## Retention
 
-Telemetry is high-volume and low-shelf-life. The agent prunes raw telemetry and rollups on **separate windows**, so trends outlive the events that produced them:
+You choose how long each layer is kept. NightOwl never deletes data on its own: `nightowl:prune` does, and only once you schedule it. When it runs, raw telemetry and each rollup tier have their own window, so trends outlive the events that produced them:
 
-```env
-NIGHTOWL_RETENTION_DAYS=14         # raw telemetry
-NIGHTOWL_ROLLUP_RETENTION_DAYS=90  # rollups — tiny, so keep them far longer
-```
+| Variable                                 | Default | Applies to       |
+| ---------------------------------------- | ------- | ---------------- |
+| `NIGHTOWL_RETENTION_DAYS`                | `14`    | Raw telemetry    |
+| `NIGHTOWL_ROLLUP_RETENTION_DAYS`         | `90`    | Minute rollups   |
+| `NIGHTOWL_HOURLY_ROLLUP_RETENTION_DAYS`  | `366`   | Hourly rollups   |
+| `NIGHTOWL_DAILY_ROLLUP_RETENTION_DAYS`   | `1100`  | Daily rollups    |
+
+Raise any of them to keep more. The only cost is disk on your own PostgreSQL; see [PostgreSQL sizing](/performance/postgresql-sizing).
 
 <Warning>
-  Nothing is deleted until you schedule the command. Setting `NIGHTOWL_RETENTION_DAYS` alone has no effect — it only supplies the default window for `nightowl:prune`.
+  Nothing is deleted until you schedule the command. Setting `NIGHTOWL_RETENTION_DAYS` alone has no effect: it only supplies the default window for `nightowl:prune`.
 </Warning>
+
+<Note>
+  On the Hobby plan the dashboard shows the last 14 days. That limits what the dashboard reads, not what is stored in your database.
+</Note>
+
+The **Retention** tab on the Data Management page reports how far back your raw telemetry and rollups actually go, read from the database.
 
 ## Pruning
 
-The `nightowl:prune` artisan command deletes raw rows older than `NIGHTOWL_RETENTION_DAYS` and rollup buckets older than `NIGHTOWL_ROLLUP_RETENTION_DAYS`. Override either for a single run with `--days=N` / `--rollup-days=N`, or use `--hours=N` for sub-day raw retention. Schedule it in the app you're monitoring:
+The `nightowl:prune` artisan command deletes raw rows older than `NIGHTOWL_RETENTION_DAYS`, minute rollup buckets older than `NIGHTOWL_ROLLUP_RETENTION_DAYS`, and hourly and daily buckets older than their own windows. Override the raw and minute windows for a single run with `--days=N` / `--rollup-days=N`, or use `--hours=N` for sub-day raw retention. Schedule it in the app you're monitoring:
 
 ```php
 // routes/console.php
@@ -102,7 +115,7 @@ On **unconverted** tables the old PostgreSQL rules apply: a `DELETE` marks rows 
 
 ### Selective delete (Data Management)
 
-The **Data Management** page in the sidebar shows your storage split across raw / rollups / triage, reports how far back your data actually goes, and lets you delete raw telemetry for a specific date range, narrowed by table and filter. Use it to reclaim disk, or to clear noise from a staging incident or a runaway log level without waiting for retention to catch up.
+The **Data Management** page in the sidebar (Team and Agency plans) has three tabs. **Storage** shows your storage split across raw, rollups and triage. **Retention** reports how far back your data actually goes. **Clear Data** deletes raw telemetry for a date range, narrowed by table and filter. Use it to reclaim disk, to clear noise from a staging incident or a runaway log level, or to remove one user's data.
 
 1. **Choose data types.** Each one shows its rollup coverage and exactly what deleting it keeps and loses.
 2. **Pick a date range.** The most recent data is protected, and how much depends on what you selected:
@@ -112,36 +125,49 @@ The **Data Management** page in the sidebar shows your storage split across raw 
    | Only fully-aggregated tables                                       | 24 hours         |
    | Exceptions or logs                                                 | 7 days           |
 
-   The 24-hour floor is a safety margin, so you can't clear the window you're currently looking at — rollups never lag behind raw rows, because the agent commits both in a single transaction. The 7-day floor exists because that data isn't recoverable from anywhere.
+   The 24-hour floor is a safety margin, so you can't clear the window you're currently looking at. It isn't there because rollups lag behind raw rows: they don't, because the agent commits both in a single transaction. The 7-day floor exists because that data isn't recoverable from anywhere.
 
 <Warning>
   If this app's rollup tables are missing or were never backfilled, **nothing is aggregated** and every table is treated as permanent: the page shows a 7-day floor and a warning instead of the usual coverage badge. Run `php artisan nightowl:migrate` then `php artisan nightowl:backfill-rollups` in the monitored app before clearing anything.
 </Warning>
 
-   If your range reaches past the floor it is **shortened**, not rejected — the preview reports the window actually used.
+   If your range reaches past the floor it is **shortened** rather than rejected, and the preview reports the window actually used.
 
-3. **Filter** by route path, status code, duration, user, job status, log level, exception class, or cache event type. Filters only apply to tables where the column exists.
-4. **Preview** shows counts per table, each tagged with its coverage, before you commit. Deletion is then chunked in 10,000-row batches.
+3. **Filter** by route path, status code, duration, user, job status, log level, exception class, or cache event type. Filters only apply to tables where the column exists, and the preview names any filter a table ignores. The cache event type filter offers the event types the Nightwatch SDK records (Hit, Miss, Write, Write failure, Delete, Delete failure) plus older spellings (Set, Put, Forget, Fail) for data recorded before them.
+4. **Preview impact** shows counts per table, each tagged with its coverage, before you commit. To delete, type `DELETE` (or `DELETE PERMANENTLY` when the selection includes a table that isn't fully aggregated) and confirm.
 
-Rollup tables are never touched by this flow, so your charts survive. Neither are settings, alert channels, or user identity.
+The deletion runs in the background in 10,000-row batches, so you can leave the page. **Stop** halts it at the next batch; it doesn't restore what's already gone. One deletion runs per app at a time, and each user can start three per hour.
+
+Rollup tables are never touched by this flow, so your charts survive. Settings and alert channels aren't touched either. The one exception is a deletion filtered to a user, described below.
+
+### Deleting data for one user
+
+Filter by **User** to remove one person's data, for example after an erasure request. Besides that user's raw rows in the selected tables, the deletion also:
+
+- deletes their rows in the per-user rollups (the counts on the Users page) inside the window, for requests, jobs and exceptions. This applies only to tables no other filter narrows. If a route, status, duration, job status or exception class filter also applies to a table, that table's per-user rollups stay, because a per-user count can't be split that way.
+- deletes their stored name and email (`nightowl_users`) once nothing about them remains: no raw row in any table, inside the window or outside it, and no per-user rollup row.
+
+The preview lists the per-user rollup rows and the `nightowl_users` row with the other tables, and says which outcome to expect: *"This user's name and email are also deleted. Nothing else about them remains after this deletion."* or *"This user's name and email are kept, because other data about them remains outside this deletion."* If checking for remaining data takes too long, the name and email are kept and the preview says so. The confirm dialog repeats what goes beyond raw rows, for example *This also deletes this user's counts on the Users page for this window, and their name and email.*
+
+The protected window still applies. A user active in the last 24 hours (7 days with exceptions or logs selected) keeps their name and email until a later deletion covers that period. To remove everything about a user, select every data type, set no other filters, start the date range before their first activity, and run the deletion once their latest activity is older than the protected window.
 
 <Note>
-  Deleting `nightowl_exceptions` loses only the per-occurrence stack traces — old occurrences can no longer be opened to see where they were thrown. The issue itself (status, assignee, comments, activity) is **kept**: an issue is triage state, not telemetry, so clearing exception telemetry never touches it.
+  Deleting `nightowl_exceptions` loses only the per-occurrence stack traces: old occurrences can no longer be opened to see where they were thrown. The issue itself (status, assignee, comments, activity) is **kept**. An issue is triage state, not telemetry, so clearing exception telemetry never touches it.
 </Note>
 
 ### Delete app (Danger Zone)
 
-From **Settings → Danger Zone**, **Delete app** removes the app from NightOwl along with its agent token and alert routing. *Does not* drop or truncate your `nightowl_*` tables — that's your database, and we won't touch it. If you want the telemetry gone too, use Data Management for a targeted range or run `php artisan nightowl:clear` in the customer app for a full truncate.
+From **Settings → Danger Zone**, the team owner can **Delete app**. It removes the app from NightOwl along with its agent token and alert routing. It *does not* drop or truncate your `nightowl_*` tables: that's your database, and NightOwl won't touch it. If you want the telemetry gone too, use Data Management for a targeted range or run `php artisan nightowl:clear` in the customer app for a full truncate.
 
 <Warning>
-  Data Management deletions are irreversible — there's no soft-delete. Take a PostgreSQL backup first if the data has any archival value.
+  Data Management deletions are irreversible; there's no soft-delete. Take a PostgreSQL backup first if the data has any archival value.
 </Warning>
 
 ## Backups
 
-NightOwl doesn't manage backups — that's your PostgreSQL provider's job. The `nightowl_*` tables back up the same way the rest of your database does. If you use `pg_dump`, include the schema you configured (`public` by default) and you'll capture everything. If you use managed snapshots (RDS, Cloud SQL), they already cover it.
+NightOwl doesn't manage backups; that's your PostgreSQL provider's job. The `nightowl_*` tables back up the same way the rest of your database does. If you use `pg_dump`, include the schema you configured (`public` by default) and you'll capture everything. If you use managed snapshots (RDS, Cloud SQL), they already cover it.
 
-For point-in-time-restore strategies, treat the `nightowl_*` tables like any other high-write workload — their WAL volume scales with telemetry throughput, so budget your WAL storage accordingly.
+For point-in-time-restore strategies, treat the `nightowl_*` tables like any other high-write workload: their WAL volume scales with telemetry throughput, so budget your WAL storage accordingly.
 
 ## Sizing expectations
 
@@ -153,7 +179,7 @@ As a rough baseline for capacity planning:
 | Medium app (~1,000 req/s)        | ~86M                | ~5 GB                      |
 | Large app (~10,000 req/s)        | ~860M               | ~50 GB                     |
 
-At the default 14-day retention these multiply by 14. Rollups add a small, near-constant overhead on top — they scale with the number of distinct route/query/job groups per minute, not with traffic volume. See [PostgreSQL sizing](/performance/postgresql-sizing) for disk, memory, and vCPU guidance.
+At the default 14-day retention these multiply by 14. Rollups add a small, near-constant overhead on top. They scale with the number of distinct route/query/job groups per minute, not with traffic volume. See [PostgreSQL sizing](/performance/postgresql-sizing) for disk, memory, and vCPU guidance.
 
 ## Exporting data
 
@@ -166,4 +192,4 @@ pg_dump -h <host> -U <user> -d <db> \
   -f nightowl-export.dump
 ```
 
-There's no proprietary format — the schema is plain PostgreSQL, and every column is documented in the agent package's migration files.
+The export is plain PostgreSQL and complete: the `nightowl_*` pattern includes the raw tables, the rollups and the `nightowl_dict_*` dictionaries. The current raw format (the `_v2` tables) doesn't read column by column, though. Repeated values are stored once in the dictionary tables and referenced by id, and large fields in `_z` columns (such as `payload_z` and `context_z`) are compressed with raw DEFLATE. Keep the dictionaries with the raw tables, and inflate the `_z` columns with zlib's raw mode (PHP's `gzinflate`, for example). The agent package's migration files document every table and column.

@@ -1,25 +1,33 @@
 ---
 title: Production Deployment
-description: Run the NightOwl agent under a process supervisor — Supervisor or systemd recipes.
+description: Run the NightOwl agent under a process supervisor, with Supervisor, systemd and Docker recipes.
 ---
 
-The NightOwl agent is a long-running process. Don't leave it in the foreground of an SSH session — hand it to a supervisor so it restarts on crash and survives reboots.
+The NightOwl agent is a long-running process. Don't leave it in the foreground of an SSH session. Hand it to a supervisor so it restarts on crash and survives reboots.
 
 ## Buffer directory
 
-Before starting the agent, ensure the local SQLite buffer directory exists and is writable by the process user:
+The agent buffers telemetry in a SQLite file under `storage/nightowl`, and creates the directory itself if it's missing. What matters is who owns it: the agent must run as the user that owns the buffer. Set that up before the first start, with the user your supervisor runs the agent as (`www-data` in the recipes below):
 
 ```bash
-mkdir -p storage/nightowl && chmod 775 storage/nightowl
+mkdir -p storage/nightowl
+sudo chown -R www-data:www-data storage/nightowl
+chmod 775 storage/nightowl
 ```
 
+If another user owns the buffer (for example after you ran `php artisan nightowl:agent` once as yourself), the agent refuses to start with `NightOwl agent cannot write its buffer database and will not start.` and names the likely causes. It stops rather than risk writing the same rows twice.
+
+The directory also holds a lock file (`agent-buffer.sqlite.lock`) that stops a second agent from using the same buffer, the drain workers' metrics files, and the saved copy of your alert channels that health alerts use when your database is down. That copy includes SMTP passwords and webhook secrets. When `storage/nightowl/` has no `.gitignore`, the agent writes one that keeps the directory's contents out of git; it never replaces one you wrote. Don't delete the lock file while an agent is running.
+
 <Note>
-  Inside a Docker container the buffer directory is required at container start — bake it into your image or mount a persistent volume so buffered telemetry survives restarts.
+  Inside a Docker container the buffer directory must exist when the container starts. Create it in your image, owned by the user the agent runs as, and mount a persistent volume there so buffered telemetry survives restarts.
 </Note>
 
 ## Supervisor
 
-Recommended for most deployments — works out of the box on Ubuntu/Debian/RHEL, integrates with Laravel Forge and most PaaS runners.
+Recommended for most deployments. It works out of the box on Ubuntu, Debian and RHEL, and integrates with Laravel Forge and most PaaS runners.
+
+Save this as `/etc/supervisor/conf.d/nightowl-agent.conf` on Ubuntu and Debian. On RHEL-family systems the directory is `/etc/supervisord.d/` and the file needs an `.ini` extension.
 
 ```ini
 [program:nightowl-agent]
@@ -32,19 +40,19 @@ stdout_logfile=/var/log/nightowl-agent.log
 stopwaitsecs=30
 ```
 
-Reload with:
+Load it with:
 
 ```bash
 sudo supervisorctl reread
 sudo supervisorctl update
-sudo supervisorctl start nightowl-agent
+sudo supervisorctl status nightowl-agent
 ```
 
-`stopwaitsecs=30` gives the agent time to flush pending rows out of SQLite into PostgreSQL before SIGKILL. If you drain heavy volume, bump it to 60.
+`update` starts the new program, because it has `autostart=true`. `stopwaitsecs=30` is how long Supervisor waits after `SIGTERM` before it kills the agent. The agent needs at most about 10 seconds to stop (see [Graceful shutdown](#graceful-shutdown)), so 30 leaves room.
 
 ## systemd
 
-Use this on stock Linux without Supervisor (or when you already manage app services with systemd).
+Use this on stock Linux without Supervisor, or when you already manage app services with systemd.
 
 ```ini
 [Unit]
@@ -72,26 +80,34 @@ sudo systemctl start nightowl-agent
 sudo systemctl status nightowl-agent
 ```
 
+To run several agents on one host from one unit file, see the template unit in [Multiple instances](/agent/multiple-instances#running-multiple-agents-on-one-host-linux).
+
 ## Docker
 
-Run the agent as its own container (separate from your web container). Share the app code and the `storage/nightowl` volume:
+Run the agent as its own container, from the same image as your app. The two containers don't share a network namespace, so each side needs one setting it doesn't need on a single host:
+
+- the agent must listen beyond loopback: `NIGHTOWL_AGENT_HOST=0.0.0.0`;
+- the app must send to the agent's container: `NIGHTOWL_INGEST_URI=nightowl-agent:2407`.
+
+Without them the app sends to its own `127.0.0.1:2407`, where nothing listens, and no telemetry arrives.
 
 ```yaml
 services:
   app:
     # ... your existing app service
-    volumes:
-      - ./:/var/www/html
-      - nightowl-buffer:/var/www/html/storage/nightowl
+    environment:
+      NIGHTOWL_INGEST_URI: nightowl-agent:2407
+      NIGHTOWL_TOKEN: ${NIGHTOWL_TOKEN}
 
   nightowl-agent:
     image: your-app-image
     command: php artisan nightowl:agent
     restart: unless-stopped
+    stop_grace_period: 30s
     volumes:
-      - ./:/var/www/html
       - nightowl-buffer:/var/www/html/storage/nightowl
     environment:
+      NIGHTOWL_AGENT_HOST: 0.0.0.0
       NIGHTOWL_TOKEN: ${NIGHTOWL_TOKEN}
       NIGHTOWL_APP_ID: ${NIGHTOWL_APP_ID}
       NIGHTOWL_DB_HOST: postgres
@@ -103,25 +119,50 @@ volumes:
   nightowl-buffer:
 ```
 
-Putting the agent in its own container keeps ingest throughput independent of your PHP-FPM worker count, and lets you scale drain workers without touching the web tier.
+Adjust `/var/www/html` to your image's app directory. The image needs the PHP extensions the agent uses: `pdo_pgsql`, `pdo_sqlite`, and `pcntl` and `posix` for the default async driver. `stop_grace_period: 30s` matters because Docker's default stop timeout is 10 seconds, about as long as the agent's own shutdown can take.
+
+Don't publish ports `2407` or `2409` with `ports:`. The app reaches the agent over the compose network, and neither port needs to be reachable from outside.
+
+<Warning>
+  If your image runs `php artisan config:cache` at build time, the `environment:` values above are ignored, because a cached config no longer reads the environment. Put `NIGHTOWL_INGEST_URI` in the `.env` that gets cached, and start the agent with `php artisan nightowl:agent --host=0.0.0.0`: the `--host` option still applies under a cached config.
+</Warning>
+
+Putting the agent in its own container keeps ingest independent of your PHP-FPM worker count, and lets you change `NIGHTOWL_DRAIN_WORKERS` without touching the web tier.
 
 ## Graceful shutdown
 
-On `SIGTERM` the agent:
+On `SIGTERM` (or `SIGINT`) the agent:
 
-1. Stops accepting new TCP/UDP payloads.
-2. Flushes any in-memory batches to SQLite.
-3. Waits up to 30 seconds for drain workers to finish their current `COPY` batch.
-4. Closes the PostgreSQL connection cleanly.
+1. Stops accepting connections. It closes the ingest port, the UDP listener if you enabled one, and the health API.
+2. Tells each drain worker to stop. A worker finishes the batch it's writing, then keeps draining for up to 5 more seconds.
+3. Waits up to 10 seconds for its workers, then kills any that are still running.
 
-Because all data passes through the SQLite WAL buffer before PostgreSQL, a hard kill won't lose telemetry — it'll just resume draining on the next start.
+Every payload is written to the SQLite buffer as soon as it's accepted, so nothing the agent accepted exists only in memory. Rows still in the buffer when the agent stops are drained after the next start.
+
+A hard kill (`SIGKILL`, the OOM killer) doesn't lose buffered rows either. The batch being written at that moment can be written to PostgreSQL a second time after the restart. Drain workers notice when the agent that started them is gone and exit, and the next agent to start frees the rows they had claimed.
+
+### Restarts and rolling deploys
+
+A new agent can start while the old one is still stopping, for example when a rolling deploy starts the new container before the old one exits and both use the same buffer volume. The new agent then waits for the buffer. It logs `Another agent (pid N) is using the buffer at <path>. Waiting up to 30s for it to exit.` and starts once the old agent has exited (`The other agent exited after 1.2s. Starting.`). If the old agent still holds the buffer after `NIGHTOWL_BUFFER_LOCK_WAIT` seconds (30 by default), the new one exits with `NightOwl agent will not start: another agent (pid N) is still using this buffer after 30s.`
+
+If you raise the stop timeout you give the old agent (`stopwaitsecs`, `TimeoutStopSec` or `stop_grace_period` in the recipes above) past 30 seconds, raise `NIGHTOWL_BUFFER_LOCK_WAIT` with it, so the new agent is still waiting when the old one is killed.
 
 ## Health checks
 
-The async driver exposes a health endpoint on `NIGHTOWL_HEALTH_PORT` (default `2409`):
+The async driver serves `GET /status` on `NIGHTOWL_HEALTH_PORT` (default `2409`), on the same address as the ingest port, `NIGHTOWL_AGENT_HOST` (`127.0.0.1` by default):
 
 ```bash
 curl http://127.0.0.1:2409/status
 ```
 
-Returns ingest/drain rates, buffer depth, and active diagnosis rules. Wire this into your existing health-check infrastructure (Kubernetes liveness probe, Consul check, uptime monitor) so a stalled agent pages you before the buffer fills up. See [Health monitoring](/agent/health-monitoring) for the fields and what to alert on.
+It returns ingest and drain rates, buffer depth and the active diagnoses. See [Health monitoring](/agent/health-monitoring#the-status-endpoint) for the fields.
+
+`/status` answers HTTP 200 whenever the process is up, even when the agent is critical. A check on the status code only tells you the process is alive, which is the right test for a liveness probe: restarting the agent doesn't fix most critical states, such as an unreachable database. To page on a stalled drain, read the `status` field instead. With `jq`:
+
+```bash
+curl -fsS http://127.0.0.1:2409/status | jq -e '.status == "healthy"'
+```
+
+**Kubernetes.** An `httpGet` probe connects to the pod's IP, and the default `127.0.0.1` bind doesn't answer there. Use an `exec` probe that runs `curl -fsS http://127.0.0.1:2409/status` inside the container, or set `NIGHTOWL_AGENT_HOST=0.0.0.0`, which also opens the ingest port on the pod IP.
+
+**Exposure.** `/status` has no authentication. When the agent listens on `0.0.0.0` (a [dedicated monitoring server](/agent/remote-agent), Docker, Kubernetes), the health port listens on every interface too. Keep `2409` behind the same firewall rules as `2407`, or turn the endpoint off with `NIGHTOWL_HEALTH_ENABLED=false`. Agent Health in the dashboard doesn't use this port, so it keeps working either way.

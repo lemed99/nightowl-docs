@@ -1,0 +1,77 @@
+---
+title: "Performance Thresholds"
+description: "Turn slow routes, jobs, queries and other work into performance issues, with one alert per issue."
+---
+
+A threshold says how long a kind of work may take. When a record meets or exceeds it, the agent opens a [performance issue](/dashboard/issues#the-two-issue-types) and alerts your channels. Later slow records add to the same issue instead of alerting again.
+
+Thresholds are on every plan. Adding, editing or removing one needs the owner or admin role on the app.
+
+## Set a threshold
+
+1. Open the app's **Settings** and choose the **Thresholds** tab.
+2. In the card for the kind of work (Routes, Jobs, Queries, …), click **Add threshold**.
+3. Pick a target, or leave it on the **All** option (**All routes**, **All hosts** and so on) to cover every target of that kind. The list offers the targets NightOwl has recorded in the last 30 days.
+4. Enter the duration in milliseconds (the dialog starts at `1000`) and click **Add threshold**.
+
+The card then lists the threshold, for example `GET|HEAD /api/search  300ms`, or `All hosts  1000ms` for a global one. Use the pencil to change it and the bin icon to remove it. A route's detail page draws the threshold that applies to it on its duration chart.
+
+Thresholds are stored in the app's own database, in `nightowl_settings`, so every environment that shares that database uses the same ones.
+
+## What each type targets
+
+| Card | Target | Example target | One issue per |
+| ---- | ------ | -------------- | ------------- |
+| Routes | Route, as methods and path | `GET\|HEAD /api/search` | route |
+| Jobs | Job class | `App\Jobs\ProcessOrder` | job |
+| Commands | Command | `app:sync-data` | command |
+| Scheduled Tasks | Task | `app:cleanup --daily` | scheduled task (its command and schedule) |
+| Queries | Connection | `pgsql` | SQL statement on that connection |
+| Outgoing Requests | Host | `https://api.stripe.com` | host |
+| Mail | Mailable class | `App\Mail\WelcomeMail` | mailable |
+| Notifications | Notification class | `App\Notifications\OrderShipped` | notification class |
+| Cache | Store | `redis` | cache key in that store |
+
+Queries and cache are targeted more broadly than they are grouped. A query threshold applies to every statement on a connection, but each slow statement opens its own issue. A cache threshold applies to a whole store, and each slow key opens its own issue. The issue title names the target (the connection or store), and its occurrences show the statement or key.
+
+An outgoing request threshold targets a host. The dialog lists each host once, with its scheme, as in `https://api.stripe.com`. Each call is recorded under the bare host, `api.stripe.com`, and the issue and its alerts name that. A host threshold matches either way: when the agent compares hosts, it ignores the scheme, letter case, port, path and a trailing slash. Up to agent 2.4.7 the target had to be exactly the bare host, so a host threshold saved from the dialog never opened an issue. On a newer agent, host thresholds you already saved start matching with nothing to change.
+
+## How a record is judged
+
+- **Specific beats global.** A threshold on a specific target wins over the global default for that type. Targets without their own threshold use the global default, if there is one.
+- **Meets or exceeds.** A record counts when its duration is equal to or greater than the threshold.
+- **One per target.** Each type takes one threshold per target and one global default. Adding a second one for the same target is refused, for example with `A route threshold for "GET|HEAD /api/search" already exists. Keep one threshold per target.` or `A global scheduled task threshold already exists. Keep one global threshold per type.` Two spellings of one host are one target, so adding `api.stripe.com` next to `https://api.stripe.com` gets `An outgoing request threshold for "https://api.stripe.com" already covers "api.stripe.com". Keep one threshold per host.` Use the pencil to change the existing one instead.
+- **Lists saved before that check.** An older list can still hold two thresholds for one target, including two spellings of one host. The agent and the route's duration chart both use the one listed last. Until you remove one of them, saving any change to the thresholds is refused.
+- **Environment.** Each issue belongs to one environment. The same slow route in `staging` and `production` opens two issues.
+
+## When a change takes effect
+
+The agent checks for threshold changes every 30 seconds while it drains, so a new or edited threshold applies within about half a minute, with no restart. `NIGHTOWL_THRESHOLD_CACHE_TTL` (default `86400` seconds) only caps how long the agent keeps its copy between those checks.
+
+Thresholds apply to records drained after the agent picks them up. They don't reach back into history: adding a threshold never opens issues for slow records you already have.
+
+## The issue and its alerts
+
+The first record at or over the threshold opens a performance issue titled `<target>: Duration exceeded threshold` and sends `issue.new` to every enabled channel that has **New issues** ticked. After that:
+
+- Each further slow record adds an occurrence without alerting again. The issue keeps the slowest duration it has seen.
+- The issue page lists the executions that ran at or over the threshold, each with its time, a link to the execution, and what ran (the URL, the SQL statement, the cache key, and so on).
+- **Resolve** the issue once it's fixed. If the target gets slow again, the agent reopens it and sends `issue.reopened`, unless the recurrence falls within `NIGHTOWL_REOPEN_COOLDOWN_HOURS` of the resolve (see [Configuration → Issue lifecycle](/agent/configuration#issue-lifecycle)).
+- **Ignore** it to silence that issue for good. An ignored issue never reopens, and its slow records keep adding occurrences without alerting.
+
+The alert email has the subject `[<app>] Performance Alert: <target>` and the title `<target> exceeded <N>ms threshold`. Its Performance section shows the **Duration**, the **Threshold** and how far it went **Over by**, in milliseconds and percent, and a **View issue** button. Slack and Discord alerts carry the same Duration, Threshold and Over by fields, and webhooks get `threshold_ms` and `duration_ms` (see [Alert channels](/dashboard/alert-channels#webhook)).
+
+## Worker saturation
+
+Worker saturation is a separate performance issue that isn't about one slow record. It fires when your HTTP workers stay busy for several minutes in a row.
+
+1. In **Settings → HTTP Workers**, enter the total worker count for each environment, across all its servers: 2 servers × 10 Octane workers = `20`. Under PHP-FPM, count `pm.max_children`.
+2. In the **Saturation Alert** card, tick **Enable worker saturation alert**, set **Trigger at** (10% to 200% of workers, default 90%) and **Sustained for** (1 to 60 minutes in a row, default 3), and click **Save**.
+
+Once a minute, the agent compares the average number of busy workers in each completed minute with the trigger. When every minute in the window is at or above it, the agent opens a performance issue titled *Worker saturation* for its environment, with the numbers in the message, for example `Avg concurrency held at ≥90% of 20 workers for 3 consecutive minutes (worst minute: 19.2 busy)`. Each further saturated minute adds an occurrence. It resolves, reopens and alerts like a duration threshold, through the **New issues** and **Reopened issues** events on your channels.
+
+Only environments with a worker count are checked. The setting needs agent v1.4.0 or newer.
+
+## Managing thresholds over MCP
+
+The [MCP server](/dashboard/mcp-server) has `list-thresholds-tool`, `list-threshold-targets-tool` and `update-thresholds-tool`. `update-thresholds-tool` replaces the whole list, so read the current list first and send it back with your change. It refuses a list with two thresholds for the same target, like the dashboard. Thresholds are also part of an [onboarding template](/dashboard/agency#onboarding-templates) on the Agency plan.

@@ -24,7 +24,8 @@
             "group": "Getting Started",
             "pages": [
               "introduction",
-              "quickstart"
+              "quickstart",
+              "dashboard/test-connection"
             ]
           },
           {
@@ -44,10 +45,12 @@
             "group": "NightOwl Features",
             "pages": [
               "dashboard/issues",
+              "dashboard/performance-thresholds",
               "dashboard/alert-channels",
               "dashboard/smtp-setup",
               "dashboard/mcp-server",
-              "dashboard/data-management"
+              "dashboard/data-management",
+              "dashboard/agency"
             ]
           },
           {

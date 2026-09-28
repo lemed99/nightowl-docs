@@ -3,24 +3,33 @@ title: "MCP Server"
 description: "Connect Claude Code, Codex, Cursor, and other AI assistants to NightOwl via the Model Context Protocol."
 ---
 
-NightOwl ships two remote MCP servers so AI coding assistants can drive the full dashboard — browse telemetry, triage issues, provision apps, manage teams, configure alert channels. Every AI-initiated change is logged with `actor_type=mcp`, so human and AI edits stay visually distinct and a token can be revoked instantly.
+NightOwl ships two remote MCP servers so AI coding assistants can work with the same data and settings as the dashboard: browse telemetry, triage issues, provision apps, manage teams and configure alert channels. MCP is available on the **Team** and **Agency** plans.
+
+Issue changes and comments made through MCP are stored with `actor_type=mcp`, and the issue page marks them with an **MCP** badge, so you can tell them apart from edits made in the dashboard.
 
 ## 1. Generate a personal access token
 
-Sign in to the dashboard, open **Account → MCP Tokens**, and create a token with a memorable label (e.g. *"Laptop — Claude Code"*). The raw token is shown once — copy it immediately; only the label, creation date, and last-used timestamp are visible afterwards. Revoking a token blocks every client using it instantly.
+Sign in to the dashboard, open the account menu (your name at the bottom of an app's sidebar), choose **Account**, then **Tokens** in the left rail. In the **MCP Tokens** card, enter a label you'll recognise (for example *"Laptop, Claude Code"*) and click **Generate**. The raw token is shown once, so copy it immediately. Afterwards the card shows only the label, when it was created and when it was last used.
 
-Tokens are user-scoped, inherit your team membership, and carry the `mcp` ability — they only work against the MCP endpoints.
+- Tokens belong to your user, reach the same apps your account can open with the same role on each, and carry the `mcp` ability that both MCP endpoints require.
+- A token made in the dashboard expires after 90 days. `create-mcp-token-tool` accepts `expires_in_days` from 1 to 365.
+- Each user can hold up to 20 MCP tokens.
+- Revoking a token blocks every client that uses it straight away.
+
+<Note>
+  Creating a token needs a Team or Agency plan on your own account. The per-app server also checks the plan of the team that owns the app, so a token works on an app only while that team's owner is on Team or Agency.
+</Note>
 
 ## 2. The two servers
 
-NightOwl exposes two MCP endpoints. You'll usually register both.
+NightOwl exposes two MCP endpoints. You'll usually register both. One token works on both.
 
 | Server | Endpoint | Scope | Typical use |
 | ------ | -------- | ----- | ----------- |
-| **Platform** | `/mcp/platform` | Your account + every team you belong to | Provisioning apps, inviting teammates, rotating agent tokens, inspecting agent health |
-| **Tenant** | `/mcp/<app-id>` | A single connected app's telemetry | Triage issues, browse requests / exceptions / queries / jobs / logs, configure alert channels, manage data retention |
+| **Platform** | `/mcp/platform` | Your account and every team you belong to | Provisioning apps, inviting teammates, rotating agent tokens, reading agent health |
+| **Tenant** | `/mcp/<app-id>` | One connected app | Triage issues, browse requests, exceptions, queries, jobs and logs, configure alert channels and thresholds, delete data |
 
-The platform server has **25 tools**; the tenant server has **53**. Full coverage of the dashboard's CRUD surface.
+The platform server has **25 tools** and the tenant server has **51**.
 
 ## 3. Connect your client
 
@@ -97,7 +106,7 @@ Cursor speaks bearer-token HTTP MCP natively. Add to `.cursor/mcp.json` (project
 }
 ```
 
-The `${env:NIGHTOWL_MCP_TOKEN}` reference keeps the raw token out of the file — export it from your shell profile. Cursor reloads the file when you save it.
+The `${env:NIGHTOWL_MCP_TOKEN}` reference keeps the raw token out of the file. Export it from your shell profile. Cursor reloads the file when you save it.
 
 ### Windsurf, Zed, and other stdio-only clients (via mcp-remote)
 
@@ -125,51 +134,89 @@ For clients that don't yet support remote HTTP MCP, the `mcp-remote` shim proxie
 
 ## 4. What's available
 
+Tool names are the tool's class name in kebab case, ending in `-tool` (`ListIssuesTool` is `list-issues-tool`). Clients must call the exact name, so a near miss such as `list_issues` or `get-issue` fails with "Tool not found".
+
 ### Platform server (`/mcp/platform`)
 
 | Category | Tools |
 | -------- | ----- |
-| **Apps** | `list_apps`, `get_app`, `create_app`, `update_app`, `delete_app` ⚠, `test_app_connection`, `regenerate_app_token` ⚠ |
-| **Agent health** | `app_health`, `app_health_history`, `app_health_diagnoses` |
-| **Teams** | `list_teams`, `get_team`, `create_team`, `update_team`, `leave_team`, `update_team_member`, `remove_team_member` |
-| **Invitations** | `list_team_invitations`, `create_team_invitation`, `revoke_team_invitation`, `accept_team_invitation` |
-| **MCP tokens** | `list_mcp_tokens`, `create_mcp_token`, `delete_mcp_token` |
-| **Subscription** | `show_subscription` (read only — billing mutations use the dashboard) |
+| **Apps** | `list-apps-tool`, `get-app-tool`, `create-app-tool`, `update-app-tool`, `delete-app-tool` ⚠, `test-app-connection-tool`, `regenerate-app-token-tool` ⚠ |
+| **Agent health** | `app-health-tool`, `app-health-history-tool`, `app-health-diagnoses-tool` |
+| **Teams** | `list-teams-tool`, `get-team-tool`, `create-team-tool`, `update-team-tool`, `leave-team-tool`, `update-team-member-tool`, `remove-team-member-tool` |
+| **Invitations** | `list-team-invitations-tool`, `create-team-invitation-tool`, `revoke-team-invitation-tool`, `accept-team-invitation-tool` |
+| **MCP tokens** | `list-mcp-tokens-tool`, `create-mcp-token-tool`, `delete-mcp-token-tool` |
+| **Subscription** | `show-subscription-tool` (read only; plan changes and billing stay in the dashboard) |
 
 ### Tenant server (`/mcp/<app-id>`)
 
 | Category | Tools |
 | -------- | ----- |
-| **Overview** | `dashboard_overview` |
-| **Issues** | `list_issues`, `get_issue`, `get_stack_trace`, `get_issue_occurrences`, `update_issue_status`, `bulk_update_issues`, `add_issue_comment` |
-| **Telemetry** | `list_requests`/`get_request`/`get_route_detail`, `list_exceptions`/`get_exception`, `list_queries`/`get_query`, `list_jobs`/`get_job`/`get_job_attempt`, `list_commands`/`get_command`/`get_command_attempt`, `list_scheduled_tasks`/`get_scheduled_task`/`get_scheduled_task_attempt`, `list_cache_events`, `list_logs`/`get_log`, `list_mail`/`get_mail`, `list_notifications`/`get_notification`, `list_outgoing_requests`/`get_outgoing_request`, `list_users`/`get_user` |
-| **Alerts** | `list_alerts`, `mark_alert_read`, `mark_all_alerts_read` |
-| **Alert channels** | `list_alert_channels`, `create_alert_channel`, `update_alert_channel`, `delete_alert_channel`, `toggle_alert_channel`, `test_alert_channel` |
-| **Settings** | `get_settings`, `update_settings`, `list_environments`, `list_thresholds`, `update_thresholds`, `list_threshold_targets` |
-| **Data management** | `filter_options`, `preview_deletion`, `destroy_data` ⚠ |
+| **Overview** | `dashboard-overview-tool` |
+| **Issues** | `list-issues-tool`, `get-issue-tool`, `get-stack-trace-tool`, `get-issue-occurrences-tool`, `update-issue-status-tool`, `bulk-update-issues-tool`, `add-issue-comment-tool` |
+| **Requests** | `list-requests-tool`, `get-request-tool`, `get-route-detail-tool`, `list-route-requests-tool` |
+| **Exceptions** | `list-exceptions-tool`, `get-exception-tool` |
+| **Queries** | `list-queries-tool`, `get-query-tool` |
+| **Jobs** | `list-jobs-tool`, `get-job-tool`, `get-job-attempt-tool` |
+| **Commands** | `list-commands-tool`, `get-command-tool`, `get-command-attempt-tool` |
+| **Scheduled tasks** | `list-scheduled-tasks-tool`, `get-scheduled-task-tool`, `get-scheduled-task-attempt-tool` |
+| **Cache** | `list-cache-events-tool` |
+| **Logs** | `list-logs-tool`, `get-log-tool` |
+| **Mail** | `list-mail-tool`, `get-mail-tool` |
+| **Notifications** | `list-notifications-tool`, `get-notification-tool` |
+| **Outgoing requests** | `list-outgoing-requests-tool`, `get-outgoing-request-tool` |
+| **Users** | `list-users-tool`, `get-user-tool` |
+| **Alert channels** | `list-alert-channels-tool`, `create-alert-channel-tool`, `update-alert-channel-tool`, `delete-alert-channel-tool`, `toggle-alert-channel-tool`, `test-alert-channel-tool` |
+| **Settings** | `get-settings-tool`, `update-settings-tool`, `list-environments-tool`, `list-thresholds-tool`, `update-thresholds-tool`, `list-threshold-targets-tool` |
+| **Data management** | `filter-options-tool`, `preview-deletion-tool`, `destroy-data-tool` ⚠ |
 
-⚠ = destructive. These tools require an explicit `confirm: "YES"` argument and cannot be invoked accidentally.
+⚠ = destructive. These tools refuse to run without an explicit `confirm: "YES"` argument.
+
+### Things worth knowing about specific tools
+
+- **`get-issue-tool`** returns the issue with its `subtype`, `group_hash` and `threshold_ms`, its comments and activity, and `recent_occurrences`. For an exception issue those are exception occurrences with their `trace_id`. For a [performance issue](/dashboard/performance-thresholds) they are the executions that ran at or over `threshold_ms`, each with `trace_id`, `duration_ms` and the ids you need to open it (`attempt_id` for jobs, method and URL for routes and outgoing requests).
+- **`get-issue-occurrences-tool`** returns counts only: a time series, a per-environment breakdown, the total and unique users. Take trace ids from `get-issue-tool`. For a scheduled-task performance issue, `unique_users` is `null`, because scheduled tasks record no user.
+- **`update-issue-status-tool`**, **`bulk-update-issues-tool`** and **`add-issue-comment-tool`** need the owner or admin role on the app, as in the dashboard. So do the tools that change alert channels, settings, thresholds or data. A member's token gets `This action requires admin role.`
+- **`environment`** filters the results on every tool that takes it, and `level` does on `list-logs-tool`.
+- **`time_range`** takes `1h`, `6h`, `24h`, `7d`, `14d` or `30d`, and defaults to `24h`. For a custom range, pass `from` (ISO 8601) and optionally `to`, which defaults to now. Passing `from` selects the custom range on its own. `to` without `from` is refused, and so is a preset `time_range` together with `from` or `to`.
+- **The telemetry list tools** (the `list-*-tool` entries from **Requests** to **Users** in the table above) take `page` and `per_page`. `per_page` is 1 to 100 and defaults to 50. On `list-requests-tool` it sets the number of routes per page. `list-route-requests-tool` takes `cursor` instead of `page`.
+- **`list-route-requests-tool`** lists one route's individual requests, newest first, like the request table on the route page. Take `group_hash` from a route in `list-requests-tool`. `status` keeps `4xx`, `5xx` or `success` requests, `duration` keeps requests at or over the route's `avg`, `p50`, `p95` or `p99`, and `search` keeps URLs containing the text. Each row has the request's `trace_id`, `timestamp`, `method`, `url`, `status_code` and `duration_ms`. For the next page, pass the reply's `next_cursor` as `cursor`.
+- **`get-request-tool`** opens one request by `trace_id`, with the queries, exceptions, jobs, logs and outgoing requests of the same trace. `request.payload` is the captured request payload and `request.response_body` the captured response body. Each is empty or `null` when nothing was captured. On its own, Nightwatch records a payload only for a 500 response with `NIGHTWATCH_CAPTURE_REQUEST_PAYLOAD=true`, and never a response body. To capture payloads for other statuses, or response bodies, see [Request payloads and response bodies](/agent/configuration#request-payloads-and-response-bodies).
+- **`get-user-tool`** returns the user's card. Pass `filter` to also get that user's activity of one type, paged with `page` and `per_page`: `requests` (the routes they called, with counts), `jobs` (job classes, with counts), `exceptions` (grouped by fingerprint) or `logs` (newest first). The activity comes back next to the card, under the filter's name. `user_id` must be one user's id: `__guest__` and `__authenticated__` are refused.
+- **`list-alert-channels-tool`** masks secrets. An SMTP password or webhook signing secret reads `••••••••`, and a Slack, Discord or webhook URL keeps only its scheme and host (`https://hooks.slack.com/••••••••`).
+- **`create-alert-channel-tool`** returns the new channel's `id`. Its description lists the config each type needs. `config.notify_events` picks the events the channel receives (see [Alert channels](/dashboard/alert-channels#what-fires-an-alert)). Leaving it out sends every event, and an empty list sends none.
+- **`update-alert-channel-tool`** keeps the stored name when you leave `name` out and merges the config keys you pass over the stored config. Set a key to `null` to clear it. Sending a masked value back unchanged keeps the stored secret, and any other value replaces it. Changing an email channel's `host` or `port` needs the `password` sent again.
+- **`toggle-alert-channel-tool`** sets the state you pass in `enabled`. It refuses to enable a channel that can't send yet (no webhook URL, no SMTP host, an SMTP username without its password, or an email channel with no recipients). It also refuses to enable an email channel with a recipient who isn't a member of the app's team.
+- **`test-alert-channel-tool`** sends from NightOwl's servers, like the dashboard's **Send test**, so it can't reach a private SMTP host. See [Testing a channel](/dashboard/alert-channels#testing-a-channel). It shares the Send test limit: 5 tests a minute and 30 an hour per user, counted together with the dashboard. The tools that create, update, delete or toggle a channel share the dashboard's limit on those changes, 60 a minute per user. Over a limit, a tool replies `Too many attempts. Try again in N seconds.`
+- **`destroy-data-tool`** starts a deletion in the background and returns its id. Run `preview-deletion-tool` first. If the preview reports `filters_ignored` for a table, the deletion needs `acknowledge_ignored_filters: true`, because those filters don't narrow that table. With a `user_id` filter, the preview also returns `user_identity`, which says whether that user's stored name and email would be removed (see [Deleting data for one user](/dashboard/data-management#deleting-data-for-one-user)). Like the dashboard, it needs the granular clear feature on the plan of the app's team owner, and each user can start three deletions per hour, counted together with the dashboard.
+- **`update-settings-tool`** takes a `settings` object. The keys it accepts are `auto_resolve_days`, `alert_mute_until`, `slow_request_default_ms`, `slow_job_default_ms`, `slow_command_default_ms` and `slow_query_default_ms`.
+- **`update-app-tool`** needs `db_password` to change `db_host`, `db_port`, `db_database` or `db_username`, because NightOwl never sends a saved password to a connection it wasn't saved for (see [Test Connection](/dashboard/test-connection#testing-while-editing-an-app)). A field you pass can't be empty. An empty `db_password` gets `db_password cannot be empty. Omit it to keep the current password.`
+- **`regenerate-app-token-tool`** needs the owner or admin role on the app's team, as in the dashboard.
+- **`create-team-invitation-tool`** requires `emails` (1 to 100 addresses), and only those addresses can accept the link. It expires after 7 days unless you pass `expires_in_days` (1 to 365). It's refused when the invitations would take the team past its member limit.
+- **`accept-team-invitation-tool`** follows the dashboard's rules: the link must be for your email address, and an app invitation gives you only the invited apps. It returns the dashboard's result: a `message`, the `joined` and `skipped` lists, and `team_id` for a team invitation.
+- **`list-team-invitations-tool`** lists the same pending links as the dashboard, including links that never expire and links that cover several teams, each with its `emails`.
+
+The **Copy AI prompt** button on an exception writes a debugging brief for your assistant that uses these tools by their real names. On a request, job attempt, command or scheduled task page, the brief includes the ids that run's tool needs (`get-request-tool`, `get-job-attempt-tool`, `get-command-attempt-tool` or `get-scheduled-task-attempt-tool`). On an issue or exception group page, it tells the assistant how to find the run first.
 
 ## 5. Safety model
 
 <CardGroup cols={2}>
   <Card title="Scoped tokens" icon="shield-check">
-    Tokens can only access apps where the owning user is a team member. The URL's `app-id` is validated on every call.
+    A token reaches only the apps its user can open in the dashboard, with the same role on each. A member limited to some apps reaches only those, on both servers. The `app-id` in the URL is checked on every call.
   </Card>
   <Card title="Audit trail" icon="list">
-    Every mutating call writes an activity record with `actor_type=mcp` and `actor_meta` carrying the token label and client user-agent.
+    Issue changes and comments made through MCP are stored with `actor_type=mcp` and `actor_meta` holding the token label, token id and the client's user agent. The issue page shows an **MCP** badge with the token label next to the token owner's name.
   </Card>
   <Card title="Instant revoke" icon="ban">
-    Deleting a token from Account → MCP Tokens blocks every client using it — no redeploy, no restart.
+    Revoking a token from **Account → Tokens** blocks every client using it, with no redeploy or restart.
   </Card>
   <Card title="Confirmation gates" icon="lock">
-    Destructive tools (`delete_app`, `regenerate_app_token`, `destroy_data`) refuse to execute without `confirm: "YES"`. Dry-run counterparts (`preview_deletion`) are always safe.
+    `delete-app-tool`, `regenerate-app-token-tool` and `destroy-data-tool` refuse to run without `confirm: "YES"`. `preview-deletion-tool` only counts rows and never deletes.
   </Card>
-  <Card title="Webhook parity" icon="webhook">
-    Status changes made via MCP fire the same Slack, Discord, email, and webhook channels that a human edit would.
+  <Card title="Same alerts as the dashboard" icon="webhook">
+    Status changes made through MCP fire the same Slack, Discord, email and webhook channels as a change made in the dashboard.
   </Card>
   <Card title="Self-revoke protection" icon="shield">
-    `delete_mcp_token` refuses to delete the token currently making the call. Revoke it from the dashboard instead.
+    `delete-mcp-token-tool` refuses to delete the token making the call. Revoke that one from the dashboard instead.
   </Card>
 </CardGroup>
 
@@ -182,16 +229,16 @@ Once both servers are connected, a single prompt can span NightOwl data, your co
   and is any of them caused by code I changed in the last week?
 ```
 
-The assistant calls `list_issues` on the tenant server, then `get_issue` on each hit, then runs `git log` locally to cross-reference authorship — root cause in one turn.
+The assistant calls `list-issues-tool` on the tenant server, then `get-issue-tool` on each result, then runs `git log` locally to compare against recent changes.
 
 Close the loop:
 
 ```text
-> Mark issues #4812 and #4815 as resolved — both were fixed by
+> Mark issues #4812 and #4815 as resolved. Both were fixed by
   the null check I just merged in OrderService.
 ```
 
-A single `bulk_update_issues` call flips both statuses, writes activity rows, and fires the configured alert channels — attributed to MCP rather than to you directly.
+One `bulk-update-issues-tool` call changes both statuses, writes activity rows marked as MCP, and fires the configured alert channels.
 
 Provision a new environment:
 
@@ -200,33 +247,42 @@ Provision a new environment:
   and give me the agent token so I can add it to Render's env vars.
 ```
 
-Two platform calls (`test_app_connection`, `create_app`) — the agent token comes back once in the response.
+Two platform calls (`test-app-connection-tool`, `create-app-tool`). The agent token comes back once in the response.
 
 Retention cleanup:
 
 ```text
 > How much data would I free up by deleting requests older than
-  90 days from the /api/legacy/* routes?
+  90 days from the /api/legacy routes?
 ```
 
-`preview_deletion` returns per-table row counts. Claude reads them, summarizes, and only invokes `destroy_data` (with `confirm: "YES"`) after you approve.
+`preview-deletion-tool` returns per-table row counts. The assistant summarises them and calls `destroy-data-tool` (with `confirm: "YES"`) only after you approve.
 
 ## Troubleshooting
 
 <AccordionGroup>
   <Accordion title="The client says the server failed to connect">
-    Most common cause: a stale or mistyped token. Regenerate it in the dashboard and re-add the MCP server. Some clients cache server metadata — remove and re-add the server entry to force a refresh.
+    Most common cause: a stale, expired or mistyped token. Generate a new one in the dashboard and re-add the MCP server. Some clients cache server metadata, so remove and re-add the server entry to force a refresh.
+  </Accordion>
+  <Accordion title="A tool call fails with 'Tool not found'">
+    The name doesn't match a registered tool. Names are kebab case and end in `-tool` (`list-issues-tool`, not `list_issues` or `list-issues`). Ask the client to list the server's tools, or check the tables above.
+  </Accordion>
+  <Accordion title="Calls fail with a plan or feature error">
+    MCP needs the Team or Agency plan: on your own account to create a token and use the platform server, and on the account that owns the app's team to use its tenant server. The agent health tools also need Agent Health, and `destroy-data-tool` the granular clear feature, on the team owner's plan. While a team owner's subscription has lapsed, the tools for that team and its apps return the same message as the dashboard.
+  </Accordion>
+  <Accordion title="A tool returns 'This action requires admin role.'">
+    Your role on that app is Member. Changing issues, alert channels, settings, thresholds or data needs the owner or admin role on the team, or Admin access to that app. Ask a team owner or admin to change your access on the **Teams** page.
   </Accordion>
   <Accordion title="Tenant calls return 'App not found'">
-    The `app-id` in the URL must match an app your user account has team access to. Copy the ID directly from the Apps page — it's the last segment of the app detail URL.
+    The `app-id` in the URL must be an app your account can open. A member limited to some apps gets this error on the team's other apps. Copy the ID from the app's URL in the dashboard (`/dashboard/<app-id>/…`).
   </Accordion>
   <Accordion title="A destructive tool returned a 'refusing to X' error">
-    Destructive tools require `confirm: "YES"` (exact string, uppercase, no punctuation). This is deliberate — it prevents a misinterpreted prompt from wiping an app.
+    Destructive tools require `confirm: "YES"` (exact string, uppercase, no punctuation). This is deliberate: it stops a misread prompt from wiping an app.
   </Accordion>
   <Accordion title="Mutating calls succeed but the dashboard is stale">
-    Tools flush the app cache, so the dashboard refreshes within its normal polling interval (30s for list pages, 10s for dashboards). If it lingers longer, hard-refresh the browser tab.
+    Tools clear the app's API cache, so the dashboard shows the change on its next refresh. If it lingers, reload the browser tab.
   </Accordion>
-  <Accordion title="I don't see the activity in the timeline">
-    The timeline supports filtering by `actor_type`. MCP-authored actions share the timeline with human ones and are only hidden if the filter excludes them.
+  <Accordion title="How do I tell MCP edits from human ones?">
+    On the issue page, comments and activity written through MCP carry an **MCP** badge with the token's label. The name shown is the token's owner. `get-issue-tool` returns `actor_type` on each comment and activity row.
   </Accordion>
 </AccordionGroup>

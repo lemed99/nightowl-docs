@@ -80,7 +80,7 @@ The Vapor app **collects** telemetry and transmits it over TCP. The agent host *
 The agent verifies the payload's protocol version and token, and the two hosts must agree on the `laravel/nightwatch` version that shapes the wire format. Because the agent host and the Vapor app run the same application release, deploying the same commit to both keeps them in lockstep. If you upgrade `nightowl/agent` (and the `laravel/nightwatch` it pulls in), deploy that release to **both** hosts together, then restart the daemon.
 
 <Warning>
-  Keep the ingest port private. Telemetry travels over plain TCP (token-gated, not encrypted in transit), so `2407` should only be reachable from your Vapor subnet — never expose it to the public internet. Scope the security-group source to your subnet CIDR, not `0.0.0.0/0`.
+  Keep the ingest port private. Telemetry travels over plain TCP (token-gated, not encrypted in transit), so `2407` should only be reachable from your Vapor subnet. Never expose it to the public internet. Scope the security-group source to your subnet CIDR, not `0.0.0.0/0`. The health API (`NIGHTOWL_HEALTH_PORT`, default `2409`) listens on the same address and has no authentication, so don't open it either, or set `NIGHTOWL_HEALTH_ENABLED=false`.
 </Warning>
 
 ## Verifying it works

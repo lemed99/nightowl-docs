@@ -3,7 +3,7 @@ title: "Issues"
 description: "Manage exception and performance issues with status tracking and bulk actions."
 ---
 
-Issues are NightOwl's triage surface. Every unhandled exception and every operation that crosses a duration threshold gets grouped by fingerprint so you see one row per *problem*, not one row per occurrence. From there you assign, prioritize, discuss, and resolve — the same workflow regardless of whether the issue started as a stack trace or a slow query.
+Issues are NightOwl's triage surface. Every exception and every operation that crosses a duration threshold is grouped by fingerprint, so you see one row per *problem*, not one row per occurrence. From there you assign, prioritize, discuss and resolve, with the same workflow whether the issue started as a stack trace or a slow query.
 
 ## The two issue types
 
@@ -12,61 +12,63 @@ Issues are NightOwl's triage surface. Every unhandled exception and every operat
     Grouped by stack-trace fingerprint. One issue covers every occurrence of the same bug across every request, job, or command that hit it.
   </Card>
   <Card title="Performance issues" icon="gauge">
-    Opened automatically when a single record's duration crosses a threshold you configure in **Settings → Thresholds**. Thresholds cover routes, queries, jobs, commands, cache, mail, notifications, outgoing requests, and scheduled tasks.
+    Opened when a record's duration meets or exceeds a threshold you set in **Settings → Thresholds**, for routes, jobs, commands, scheduled tasks, queries, outgoing requests, mail, notifications and cache. Worker saturation alerts open one too. See [Performance thresholds](/dashboard/performance-thresholds).
   </Card>
 </CardGroup>
 
-Switch between tabs at the top of the Issues page. Filters, bulk actions, and status pills apply to the active tab.
+Switch between the **Exceptions** and **Performance** tabs at the top of the Issues page. Filters and bulk actions apply to the active tab.
 
 ## Status model
 
 An issue is always in one of three states:
 
-| Status      | Meaning                                                                                                                              |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `open`      | Active. Alerts fire and the issue appears in the default list.                                                                       |
-| `resolved`  | Fixed. Silent until the fingerprint recurs — at which point the agent auto-reopens it (regression detection) and fires `issue.reopened`. |
-| `ignored`   | Noise. Silenced indefinitely — never auto-reopens, regardless of how often the fingerprint recurs.                                   |
+| Status      | Meaning |
+| ----------- | ------- |
+| `open`      | Active. Alerts fire and the issue appears in the default list. |
+| `resolved`  | Fixed. Silent until the fingerprint recurs, at which point the agent reopens it (regression detection) and fires `issue.reopened`. |
+| `ignored`   | Noise. Silenced indefinitely: never reopens, however often the fingerprint recurs. |
 
 Use **Resolve** for bugs you've deployed a fix for. Use **Ignore** for issues you've deliberately decided not to chase (third-party noise, known false positives, deprecated endpoints).
 
+Changing an issue's status, priority, assignee or description, and commenting, need the owner or admin role on the app. Members can read issues but can't change them, in the dashboard or through MCP.
+
 ## Triage workflow
 
-1. **Filter down** — status pills (Open / Resolved / Ignored / All), environment dropdown, assignee dropdown, and free-text search stack across each other.
-2. **Pick by priority** — the priority column is sortable. Critical first, then high.
-3. **Open the detail view** — click a row. The right-hand *Manage* sidebar has status, priority, assignee, and description; the main pane shows the latest stack trace, occurrence sparkline, affected users, environments, and a combined comments + activity timeline.
-4. **Resolve with context** — post a comment and tick **Resolve on comment** in one action. The comment, the status flip, and the alert fan-out all happen together.
+1. **Filter down.** Pick **Open**, **Resolved** or **Ignored**. On Open, narrow further to **All**, **Unassigned** or **Mine**. The environment selector and the search box stack with these.
+2. **Set priority and owner.** The **Priority** column takes Low, Medium, High or Urgent, and the **Assigned** column takes any member of the app's team. Both are editable on open issues only; reopen a resolved or ignored issue to change them. Click the **Priority** header to sort by it: Urgent first, then High, Medium, Low and issues with no priority. Issues with the same priority are ordered by when they were last seen, newest first. Click again to reverse the order.
+3. **Open the detail view.** Click a row. The right sidebar has **Manage** (status, priority, assignee), **Details** and **Occurrences**. The main pane shows the description, the latest exception and its stack trace (exception issues), the occurrences table, and the activity timeline with comments. For a performance issue, the occurrences are the executions that ran at or over the threshold.
+4. **Record what you found.** Comments and the description take markdown. Post a comment to document the fix, then set the status. Through MCP, `add-issue-comment-tool` can post a comment and resolve the issue in one call.
 
 ## Bulk actions
 
-Tick the checkbox on multiple rows to reveal the bulk toolbar. Available actions:
+Tick the checkbox on several rows to reveal the bulk toolbar. You can stage any of these, then click **Apply**:
 
-- Resolve selected
-- Ignore selected
-- Reopen selected
+- **Status**: move the selected issues to one of the other two statuses.
+- **Priority** and **Assignee**: set or clear them (on the Open view only).
+- **Note**: posted as a comment on each selected issue (on the Open view only).
 
-Useful when you ship a fix that knocks out a cluster of related exceptions, or when you want to sweep stale issues before a release. Bulk assignment isn't supported today — assign one issue at a time from the Assigned column or the detail sidebar.
+Useful when you ship a fix that knocks out a cluster of related exceptions, or when you want to sweep stale issues before a release. A bulk status change sends one alert per issue to the channels that listen for that event.
 
 ## Assignments and comments
 
-- **Assignee** — any team member on the app. Assigning an issue notifies the assignee through the configured [alert channels](/dashboard/alert-channels) (if they have email configured).
-- **Comments** — markdown supported. Use them to document the investigation, link to PRs, or record why something was ignored.
-- **Activity timeline** — every status change, priority bump, assignment, comment, and description edit appears in the timeline. Entries from the [MCP server](/dashboard/mcp-server) are visually distinct so AI-driven edits stay auditable.
+- **Assignee.** Any member of the app's team. Assigning doesn't send a notification.
+- **Comments.** Markdown supported. Use them to document the investigation, link to PRs, or record why something was ignored.
+- **Activity timeline.** Every status change, priority change, assignment, comment and description edit appears in the timeline with who made it. Changes made through the [MCP server](/dashboard/mcp-server) carry an **MCP** badge with the token's label next to the token owner's name. Reopens by the agent show as *NightOwl*, and auto-resolves as *System*.
 
 ## Alerts
 
-Alert channels fire on the four lifecycle events documented in [Alert channels → What fires an alert](/dashboard/alert-channels): `issue.new` (brand-new fingerprint), `issue.reopened` (a `resolved` issue's fingerprint recurs — the agent flips it back to `open` automatically), plus `issue.resolved` / `issue.ignored` / `issue.reopened` on user triage actions.
+Alert channels fire on the lifecycle events documented in [Alert channels → What fires an alert](/dashboard/alert-channels#what-fires-an-alert): `issue.new` (brand-new fingerprint), `issue.reopened` (a `resolved` issue's fingerprint recurs and the agent reopens it, or someone reopens it), plus `issue.resolved` and `issue.ignored` on triage actions. Each channel picks which of these it receives.
 
-Individual occurrences within an already-`open` or already-`ignored` issue never re-alert — they bump counters silently. That keeps Slack quiet during incident storms and keeps "ignored" meaningful. `resolved` is the exception: a recurrence is treated as a regression, so the agent auto-reopens the issue and fires `issue.reopened`.
+More occurrences of an already-`open` or already-`ignored` issue never re-alert; they bump counters silently. That keeps Slack quiet during incident storms and keeps "ignored" meaningful. `resolved` is the exception: a recurrence is treated as a regression, so the agent reopens the issue and fires `issue.reopened`.
 
-To suppress flapping, set `NIGHTOWL_REOPEN_COOLDOWN_HOURS` on the agent (see [Configuration → Issue lifecycle](/agent/configuration#issue-lifecycle)). With a cooldown of `24`, for example, an issue resolved less than 24 hours ago stays silent on recurrence; only after the cooldown elapses does the next recurrence trigger the auto-reopen.
+To suppress flapping, set `NIGHTOWL_REOPEN_COOLDOWN_HOURS` on the agent (see [Configuration → Issue lifecycle](/agent/configuration#issue-lifecycle)). With a cooldown of `24`, for example, an issue resolved less than 24 hours ago stays resolved and silent when it recurs. Once the cooldown has passed, the next recurrence reopens it.
 
 ## Auto-resolve stale issues
 
-In **Settings → Issues** you can set an auto-resolve window (default: disabled). Any `open` issue with no new occurrences for that many days is resolved automatically by the `nightowl:auto-resolve-issues` artisan command, scheduled via Laravel's scheduler in each app.
+In **Settings → Issues** you can set an auto-resolve window: 3, 7, 14, 30, 60 or 90 days (default: disabled). Once a day, NightOwl resolves every `open` issue whose last occurrence is older than that window. It runs on NightOwl's side, so there is nothing to schedule in your app.
 
-This keeps long-running projects from accumulating a graveyard of open-but-forgotten issues. The activity timeline still shows exactly when and why the auto-resolve happened.
+This keeps long-running projects from accumulating a graveyard of open-but-forgotten issues. The activity timeline records each one as *System changed status from open to resolved*. Auto-resolve sends no alert. If an auto-resolved issue recurs later, the agent reopens it and fires `issue.reopened` like any other resolved issue.
 
 ## API and automation
 
-Every action in the UI — status change, priority edit, comment, bulk update — has a direct API equivalent under `/data/{app}/issues`. AI assistants can do the same through the [MCP server](/dashboard/mcp-server), which wraps those endpoints with auditable tokens and a fixed tool surface.
+Every action in the UI (status change, priority edit, comment, bulk update) goes through endpoints under `/data/{app}/issues`. AI assistants can do the same through the [MCP server](/dashboard/mcp-server), with personal access tokens and a fixed set of tools.

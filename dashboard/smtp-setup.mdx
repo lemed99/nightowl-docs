@@ -7,21 +7,25 @@ NightOwl's Email alert channel is bring-your-own-SMTP: we never send mail from a
 
 ## Where to configure it
 
-In the dashboard, open your app and go to **Settings → Alert Channels → New Channel → Email**. You'll need six fields:
+In the dashboard, open your app and go to **Settings → Alerts**. In the **Email** section, click **Configure SMTP** (or **Add another** if the app already has an email channel). The form has these fields:
 
-| Field       | Notes                                                                 |
-| ----------- | --------------------------------------------------------------------- |
-| Host        | Provider's SMTP hostname.                                             |
-| Port        | 465 for SSL, 587 for TLS, 25 for unauthenticated (rarely used today). |
-| Username    | Usually your full email address or an API-key username.               |
-| Password    | SMTP password or app-specific password. Encrypted at rest.            |
-| Encryption  | `tls` (STARTTLS on 587), `ssl` (SMTPS on 465), or `none` (port 25 or a local relay with no TLS — rarely used). |
-| From address| The `From:` header on the alert email. Must be an address the provider lets you send as. |
+| Field         | Notes |
+| ------------- | ----- |
+| Channel Name  | Shown in the channel list and in `nightowl:test-alert` output. |
+| Host          | Provider's SMTP hostname. |
+| Port          | 465 for SSL, 587 for TLS, 25 for unauthenticated (rarely used today). |
+| Username      | Optional. Usually your full email address or an API-key username. Leave it empty for a relay without authentication. |
+| Password      | Optional, but required whenever a username is set. SMTP password or app-specific password. Shown masked after saving. Changing the host or port later clears it; enter it again (see [Stored secrets and masking](/dashboard/alert-channels#stored-secrets-and-masking)). |
+| Encryption    | `TLS` (STARTTLS, usually on 587), `SSL` (implicit TLS, usually on 465), or `None` (port 25 or a local relay with no TLS). |
+| From Address  | The `From:` header on the alert email. Must be an address the provider lets you send as. |
+| From Name     | Optional. Defaults to `NightOwl`. |
+| To Addresses  | Pick from the app's team members. |
+| Notify on     | Which [events](/dashboard/alert-channels#what-fires-an-alert) this channel receives. All are ticked by default. |
 
-After saving, use **Send test** to fire a synthetic alert. A successful test confirms your credentials and `From:` setup are valid — but the test is sent from NightOwl's servers, while real alerts are sent by the agent running on *your* host. So a passing test does not, by itself, guarantee real alerts will arrive. See [Troubleshooting](#troubleshooting) below for the two common causes.
+After saving, open the channel again with its pencil and click **Send Test** to send a test email. A successful test confirms your credentials and `From:` setup are valid. The test is sent from NightOwl's servers, though, while new-issue, reopened and health alerts are sent by the agent running on *your* host. So a passing test does not, by itself, guarantee those alerts will arrive. Run `php artisan nightowl:test-alert` on the server that runs the agent to test that path (see [Testing a channel](/dashboard/alert-channels#testing-a-channel)).
 
 <Warning>
-  **Match the port to the encryption.** Port `465` requires `ssl`; port `587` requires `tls`. The two are not interchangeable: `ssl` opens an encrypted connection immediately (implicit TLS), while `tls` connects in plaintext and upgrades via `STARTTLS`. A mismatched pair — `587` with `ssl`, or `465` with `tls` — can still pass **Send test** (the test path tolerates it) but fails silently from the agent, which uses a stricter SMTP client. If alerts never arrive, check this pairing first.
+  **Match the port to the encryption.** Port `465` requires `ssl`; port `587` requires `tls`. The two are not interchangeable: `ssl` opens an encrypted connection immediately (implicit TLS), while `tls` connects in plaintext and upgrades via `STARTTLS`. A mismatched pair (`587` with `ssl`, or `465` with `tls`) can still pass **Send test** (the test path tolerates it) but fails from the agent, which uses a stricter SMTP client. That failure shows only in the agent's error log and in `php artisan nightowl:test-alert`. If alerts never arrive, check this pairing first.
 </Warning>
 
 ## Gmail (personal or Google Workspace)
@@ -60,11 +64,13 @@ Gmail also accepts port `465` with `ssl` — both work. Use whichever your firew
 
 ### 4. Send a test
 
-Click **Send test** in the dashboard. The email should land within a few seconds. If it doesn't:
+Save the channel, open it again with its pencil, and click **Send Test**. The email should land within a few seconds. If it doesn't:
 
 - **Check spam.** First-time senders to a recipient often land there.
-- **Check the error banner.** NightOwl surfaces the SMTP error verbatim — `535 Username and Password not accepted` means the App Password is wrong or was mistyped with spaces.
+- **Read the error.** A failed test shows a red toast with the SMTP server's reply. `535 Username and Password not accepted` means the App Password is wrong or was pasted with spaces.
 - **Sending limits.** Gmail caps outbound at ~500 recipients/day for personal accounts and ~2,000/day for Workspace. For teams with chatty alerts, switch to SendGrid or SES.
+
+Then run `php artisan nightowl:test-alert` on the server that runs the agent, since that's where new-issue alerts are sent from.
 
 ### Workspace with a custom domain
 
@@ -124,6 +130,17 @@ From:        alerts@yourdomain.com
 
 Find the SMTP credentials under **Sending → Domain settings → SMTP credentials** for the domain you've set up.
 
+## Relays without authentication
+
+An internal relay that accepts mail without a login needs no username or password. Leave both fields empty: the agent then sends no `AUTH` command.
+
+Two things to know about private relays:
+
+- **Send test can't reach them.** Send test runs on NightOwl's servers, which only connect to public SMTP hosts. For a private or local host it replies that it can't reach the host and points you to `php artisan nightowl:test-alert`, which sends through the agent on your server.
+- **Some alerts come from NightOwl's servers.** Alerts for issues someone resolves, ignores or reopens are sent by NightOwl's API, so they won't reach a private relay. New-issue, auto-reopened and agent health alerts come from the agent and will.
+
+If a username is set but the server doesn't advertise `AUTH`, the agent still tries `AUTH LOGIN`, since some relays accept it without announcing it. If that fails too, the error says so and tells you to clear the username and password to send without logging in. When the server offers STARTTLS, it also suggests setting encryption to TLS, because some servers only offer `AUTH` after STARTTLS.
+
 ## Deliverability checklist
 
 Even with working SMTP credentials, alerts can land in spam without proper DNS setup. For any custom domain on any provider:
@@ -143,15 +160,24 @@ Without SPF/DKIM, Gmail and Microsoft 365 will quietly mark alerts as spam — y
     For other providers: the credentials are wrong, the account is suspended, or the API key doesn't have Mail Send permission.
   </Accordion>
   <Accordion title="Connection timeout on port 587 or 465">
-    Your host's outbound firewall blocks the port. Real alerts are sent from the machine running the agent, so the relevant firewall is *yours*, not NightOwl's — a **Send test** that succeeds from NightOwl's servers won't catch this. Try the other port (587 ↔ 465), and remember to switch encryption to match (`587`→`tls`, `465`→`ssl`). On managed hosts like DigitalOcean droplets and many cloud VMs, port 25 is blocked by default but 587 is usually open; some providers block all outbound SMTP until you open a support request.
+    Your host's outbound firewall blocks the port. New-issue and health alerts are sent from the machine running the agent, so the relevant firewall is *yours*, not NightOwl's. A **Send test** that succeeds from NightOwl's servers won't catch this; `php artisan nightowl:test-alert` on that machine will. Try the other port (587 ↔ 465), and remember to switch encryption to match (`587`→`tls`, `465`→`ssl`). On managed hosts like DigitalOcean droplets and many cloud VMs, port 25 is blocked by default but 587 is usually open; some providers block all outbound SMTP until you open a support request.
   </Accordion>
   <Accordion title="Test email succeeds but real alerts never arrive">
-    **Send test** and real alerts take different paths: the test is dispatched from NightOwl's servers, while real alerts are dispatched by the agent on your own host with a stricter SMTP client. A passing test rules out wrong credentials and a bad `From:` address, but two things it does **not** rule out:
+    **Send test** and real alerts take different paths: the test is sent from NightOwl's servers, while new-issue alerts are sent by the agent on your own host with a stricter SMTP client. Run `php artisan nightowl:test-alert` on that host: it sends through the agent's own client and prints the error for any channel that fails. A passing dashboard test rules out wrong credentials and a bad `From:` address, but two things it does **not** rule out:
 
     1. **Outbound SMTP blocked on your host.** Your host's firewall (or your cloud provider) blocks outbound 587/465. The test still works because it leaves NightOwl's infrastructure, not yours. Confirm with `nc -vz smtp.yourprovider.com 587` from the box running the agent.
     2. **Port/encryption mismatch.** `587` with `ssl`, or `465` with `tls`, may pass the lenient test path but fail from the agent. Set `587`→`tls` and `465`→`ssl`.
 
-    If both are ruled out, look in spam/junk, check the recipient list on the channel, and verify DMARC/SPF alignment for the `From` address.
+    If both are ruled out, look in spam/junk, check the recipient list and the **Notify on** events on the channel, and verify DMARC/SPF alignment for the `From` address.
+  </Accordion>
+  <Accordion title="Send test says it can't reach your SMTP host">
+    Send test runs on NightOwl's servers, which only connect to public SMTP hosts, so a private, local or unresolvable host is refused there. Alerts the agent sends don't have this limit. Test that path with `php artisan nightowl:test-alert` on the server that runs the agent. See [Relays without authentication](#relays-without-authentication).
+  </Accordion>
+  <Accordion title="A username is set but the server does not advertise AUTH">
+    The relay accepts mail without a login. Clear the username and password on the channel and save. If the server offers STARTTLS, try encryption `TLS` first: some servers only offer `AUTH` after STARTTLS.
+  </Accordion>
+  <Accordion title="A recipient isn't accepted">
+    Recipients must be members of the app's team, matched without regard to case. Invite the address to the team first, then add it to the channel.
   </Accordion>
   <Accordion title="Alerts arrive but marked as spam">
     Missing or misconfigured SPF/DKIM. Run the From domain through [mxtoolbox.com/deliverability](https://mxtoolbox.com/deliverability) and fix anything flagged. A warmup period is also normal for a brand-new sending domain.
@@ -163,6 +189,6 @@ Without SPF/DKIM, Gmail and Microsoft 365 will quietly mark alerts as spam — y
 
 ## Security notes
 
-- Passwords are encrypted at rest with Laravel's `Crypt` facade, keyed off `APP_KEY`. They're decrypted only in memory at dispatch time.
-- Rotating an SMTP password doesn't invalidate pending alerts — they're sent in real time, not queued with cached credentials.
-- If you revoke an App Password or API key, the next alert will fail loudly (visible in the dashboard's channel error banner) rather than silently dropping.
+- SMTP credentials are stored as plain JSON in the `nightowl_alert_channels` table in your own database, because the agent on your server reads them to send alerts. Anyone who can read that table can read them. The dashboard shows the password masked and never sends it back.
+- When you change the password in NightOwl, a running agent uses the new one within about 30 seconds.
+- If you revoke an App Password or API key, the next alert fails. The agent writes the SMTP error to its error log, and `php artisan nightowl:test-alert` shows it.

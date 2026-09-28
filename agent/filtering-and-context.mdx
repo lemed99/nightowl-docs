@@ -1,40 +1,40 @@
 ---
 title: Filtering and Context
-description: Control what the agent captures with sampling, in-code filters, custom context metadata, and upstream redaction.
+description: Control what gets recorded with ignored routes and in-code filters, add context metadata, and redact at the source.
 ---
 
-The NightOwl agent receives whatever Nightwatch sends. That means all of Nightwatch's filtering and redaction primitives work out of the box — and the agent itself buffers the payload as-received.
+The NightOwl agent stores whatever the Nightwatch SDK in your app sends it. Nightwatch's filtering and redaction work unchanged, and NightOwl adds one filter of its own: ignored routes.
 
-## Sampling
+## Ignoring routes
 
-Sampling lives in `laravel/nightwatch` and runs inside the customer's PHP process. The trace decision is set at the start of the request and applied at the end — sensors record into the trace either way, but at flush time only sampled-in traces are shipped to the agent. That means the agent only sees and stores what Nightwatch already decided to keep, with no second-pass drop on the agent side.
-
-Configure it in `.env`:
+`NIGHTOWL_IGNORE_ROUTES` takes a comma-separated list of patterns. A matching request is never stored, and neither are the queries, logs, cache events and other records it made:
 
 ```env
-NIGHTWATCH_REQUEST_SAMPLE_RATE=0.1           # Keep ~10% of HTTP requests
-NIGHTWATCH_COMMAND_SAMPLE_RATE=1.0           # Keep all artisan commands
-NIGHTWATCH_EXCEPTION_SAMPLE_RATE=1.0         # Keep all exceptions
-NIGHTWATCH_SCHEDULED_TASK_SAMPLE_RATE=1.0    # Keep all scheduled tasks
+NIGHTOWL_IGNORE_ROUTES="up,*livewire.update,horizon/*"
 ```
 
-When an entry point is sampled *in*, the entire trace — queries, cache events, logs, outgoing requests — is captured. Sampling happens at the trace boundary, not per-record, so you never end up with half a request. Set `NIGHTWATCH_EXCEPTION_SAMPLE_RATE=1.0` to keep every exception regardless of the parent request's sample decision. See the [throughput guide](/performance/throughput) for how to pick a rate.
+- Patterns are matched against the route's path, name and action. `*` is the only wildcard and it spans `/`, and a leading slash is optional. `up` matches Laravel's `/up` health check route.
+- For Livewire, use the route name: `*livewire.update` matches Livewire 3 (`default.livewire.update`) and Livewire 4 (`default-livewire.update`), while `livewire/*` matches only Livewire 3's path.
+- Exceptions thrown during an ignored request are still stored, and so are the jobs it dispatched and what those jobs recorded.
+- The agent applies the list while draining, so set it in the `.env` of the machine that runs `nightowl:agent` and restart the agent.
+
+Nothing about an ignored request reaches your database, so it's missing from your request counts, your threshold alerts and your error rate. Ignore a busy route that always succeeds and your error rate goes up; ignore one that's failing and it goes down. The agent counts what it drops (`app_vitals.requests_ignored` on `/status`).
 
 ## In-code filtering
 
-Use Nightwatch's filtering API to exclude specific events inline:
+Use Nightwatch's filtering API to stop recording inside a block of code:
 
 ```php
 use Laravel\Nightwatch\Facades\Nightwatch;
 
 Nightwatch::ignore(function () {
-    // queries, jobs, cache events inside this callback
-    // will not be recorded
+    // queries, cache events, mail, notifications, job dispatches and
+    // outgoing HTTP calls made in here are not recorded
     User::chunk(1000, fn ($chunk) => $chunk->each(...));
 });
 ```
 
-For finer control, pause and resume around a block:
+Or pause and resume around a block:
 
 ```php
 Nightwatch::pause();
@@ -44,7 +44,20 @@ Nightwatch::pause();
 Nightwatch::resume();
 ```
 
-Useful for health-check endpoints, internal admin batch operations, or hot paths you don't want to sample but also don't want to pay for.
+Both are for the work inside a request, command or job, like a large batch operation. The request or command itself is still recorded, and so are log lines and exceptions. To keep a route such as a health check out entirely, use `NIGHTOWL_IGNORE_ROUTES`.
+
+## Sampling
+
+Sampling is a Nightwatch setting, applied in your app before anything is sent. Every rate defaults to `1.0`, which keeps everything:
+
+```env
+NIGHTWATCH_REQUEST_SAMPLE_RATE=1.0
+NIGHTWATCH_COMMAND_SAMPLE_RATE=1.0
+NIGHTWATCH_EXCEPTION_SAMPLE_RATE=1.0
+NIGHTWATCH_SCHEDULED_TASK_SAMPLE_RATE=1.0
+```
+
+If your app already sets these for Nightwatch, they keep working: the agent stores exactly what Nightwatch ships and never samples a second time. Sampling works on whole traces, so a request that's kept arrives with all its queries, cache events, logs and outgoing requests. A request that throws gets a second chance at the exception rate, and if it's kept, the whole request is kept with it.
 
 ## Context metadata
 
@@ -58,50 +71,51 @@ Context::add('feature_flags', ['new-checkout' => true]);
 Context::add('tenant', ['id' => $tenant->id, 'plan' => 'pro']);
 ```
 
-Context data is captured by Nightwatch, stored by the agent alongside the request row, and shown in the request detail page as a collapsible JSON tree. The agent's per-connection payload ceiling is 10 MB (`MAX_PAYLOAD_BYTES`) — oversized payloads are rejected with `5:ERROR`, not silently truncated — so keep context entries small and structured rather than pushing large blobs through the tracer.
+Nightwatch records the context on each request, command, job attempt and scheduled task, and the request detail page shows it in its **Context** section as a collapsible JSON tree. The agent refuses any single transmission over 10 MB with `5:ERROR`, and a refused transmission loses the whole request's telemetry, so keep context entries small and structured.
 
-Good things to stash in context:
+Good things to put in context:
 
-- Tenant / workspace / organization ID.
+- Tenant, workspace or organization ID.
 - Feature flag decisions that affected this request.
 - User role or permission set.
-- Deploy-specific debugging flags you set temporarily during an incident.
+- Debugging flags you set temporarily during an incident.
 
-Don't stash secrets in `Context` — those entries are passed through verbatim.
+Don't put secrets in `Context`: entries are passed through verbatim.
+
+`Context::add()` doesn't make logs searchable. On log lines, Laravel adds the context to the log's extra data, which the Logs page doesn't search. To find a log by a value, pass it in the log call itself, as in the next section.
 
 ### Searching log context
 
-The context you attach to a **log** — the array in `Log::error('Payment failed', ['order_id' => 8412])` — is shown on the log's detail page, but the Logs page search box does not match inside it by default. Log context is stored compressed, and PostgreSQL cannot decompress it while running a query, so the search falls back to the message and the page shows a "Narrowed search" note explaining that.
+The context you pass with a **log**, the array in `Log::error('Payment failed', ['order_id' => 8412])`, is shown on the log's detail page, but the Logs page search box doesn't match inside it by default. Log context is stored compressed, and PostgreSQL can't decompress it while running a query, so the search falls back to the message and the page shows a "Narrowed search" note explaining that.
 
-Set `NIGHTOWL_LOG_CONTEXT_SEARCHABLE=true` to store it uncompressed and make it searchable. It trades storage for that, and existing logs need converting — see [Searchable log context](/agent/configuration#searchable-log-context) for the sizing check and the conversion command.
+Set `NIGHTOWL_LOG_CONTEXT_SEARCHABLE=true` to store it uncompressed and make it searchable. It trades storage for that, and existing logs need converting. See [Searchable log context](/agent/configuration#searchable-log-context) for the sizing check and the conversion command.
+
+Context search only covers a time range that starts at least 24 hours after the point where uncompressed context begins, to allow for clock differences between machines and drain delays. So after you turn the setting on, searching context starts working about a day later, and running `php artisan nightowl:backfill-log-context` moves that point back over your older logs. Until then the search matches the message only and says so.
 
 ## Redaction
 
-PII redaction lives in `laravel/nightwatch` and runs inside the customer's PHP process before the payload is shipped to the agent. Configure it in `.env`:
+PII redaction lives in `laravel/nightwatch` and runs inside your app's PHP process before the payload is sent to the agent. Configure it in `.env`:
 
 ```env
 NIGHTWATCH_REDACT_HEADERS=Authorization,Cookie,Proxy-Authorization,X-XSRF-TOKEN
 NIGHTWATCH_REDACT_PAYLOAD_FIELDS=_token,password,password_confirmation
 ```
 
-`NIGHTWATCH_REDACT_HEADERS` strips named headers from every request record. `NIGHTWATCH_REDACT_PAYLOAD_FIELDS` recursively replaces matching keys in the request payload with a `[N bytes redacted]` marker. Both are applied at record-assembly time, so neither the agent's TCP buffer, SQLite WAL, nor PostgreSQL drain ever see the un-redacted values.
+`NIGHTWATCH_REDACT_HEADERS` strips named headers from every request record. `NIGHTWATCH_REDACT_PAYLOAD_FIELDS` recursively replaces matching keys in the request payload with a `[N bytes redacted]` marker. Both are applied when the record is built, so the agent's TCP buffer, its SQLite buffer and PostgreSQL never see the unredacted values.
 
-Note: Nightwatch only writes the request `payload` for HTTP 500 responses, and only for `application/json` and form-encoded bodies, and it never writes response bodies. To capture payloads for other statuses, or response bodies, see [Request payloads and response bodies](/agent/configuration#request-payloads-and-response-bodies).
+Note: Nightwatch writes the request `payload` only for HTTP 500 responses, only when `NIGHTWATCH_CAPTURE_REQUEST_PAYLOAD=true` (it's off by default), and only for `application/json` and form-encoded bodies. It never writes response bodies. To capture payloads for other statuses, or response bodies, see [Request payloads and response bodies](/agent/configuration#request-payloads-and-response-bodies).
 
 ## Combining the layers
 
-A common production config looks like:
+A common production setup:
 
 ```env
-# Collect everything important, drop most read traffic
-NIGHTWATCH_REQUEST_SAMPLE_RATE=0.1
-NIGHTWATCH_COMMAND_SAMPLE_RATE=1.0
-NIGHTWATCH_EXCEPTION_SAMPLE_RATE=1.0
-NIGHTWATCH_SCHEDULED_TASK_SAMPLE_RATE=1.0
+# Keep framework chatter out (read by the agent)
+NIGHTOWL_IGNORE_ROUTES="up,*livewire.update"
 
-# Strip secrets at the source (Nightwatch)
+# Strip secrets at the source (read by Nightwatch in your app)
 NIGHTWATCH_REDACT_HEADERS=Authorization,Cookie,Proxy-Authorization,X-XSRF-TOKEN
 NIGHTWATCH_REDACT_PAYLOAD_FIELDS=_token,password,password_confirmation,api_key,access_token,refresh_token
 ```
 
-Combined with `Nightwatch::ignore()` around health-check endpoints and `Context::add()` for tenant IDs, you get a dataset that's lean, safe to store, and actually queryable.
+Add `Nightwatch::ignore()` around bulk jobs you don't need traced, and `Context::add()` for tenant IDs.

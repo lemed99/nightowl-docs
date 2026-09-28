@@ -23,24 +23,32 @@ Repo: `https://github.com/lemed99/nightowl-docs` (split from the monolith in Apr
 │   ├── light.svg
 │   └── dark.svg
 ├── introduction.mdx    # Overview — what NightOwl is, how it works, key features
-├── quickstart.mdx      # 5-step getting started guide
+├── quickstart.mdx      # Getting started guide
 ├── changelog.mdx       # Release notes (Mintlify <Update> entries, newest first)
-├── agent/              # Agent deployment + scaling
+├── agent/              # Agent configuration, deployment + scaling
+│   ├── configuration.mdx
+│   ├── filtering-and-context.mdx
+│   ├── production-deployment.mdx
+│   ├── remote-agent.mdx
+│   ├── vapor.mdx
 │   ├── running-alongside-nightwatch.mdx
 │   ├── multiple-instances.mdx
 │   └── health-monitoring.mdx
 ├── dashboard/          # Feature guides
+│   ├── test-connection.mdx   # listed under Getting Started in docs.json
 │   ├── issues.mdx
+│   ├── performance-thresholds.mdx
 │   ├── alert-channels.mdx
 │   ├── smtp-setup.mdx
 │   ├── mcp-server.mdx
-│   └── data-management.mdx
+│   ├── data-management.mdx
+│   └── agency.mdx
 └── performance/        # Capacity planning
     ├── throughput.mdx
     └── postgresql-sizing.mdx
 ```
 
-**13 MDX pages total** across 4 content groups plus a standalone changelog.
+**21 MDX pages total**: 20 across 4 content groups plus a standalone changelog.
 
 ## `docs.json` — Mintlify Config
 
@@ -48,14 +56,16 @@ Repo: `https://github.com/lemed99/nightowl-docs` (split from the monolith in Apr
 - Primary: `#34d399` (emerald, matches app/landing)
 - Light accent: `#6ee7b7` / Dark: `#059669`
 - Backgrounds: `#ffffff` (light) / `#0f0f0f` (dark)
-- **Single anchor** ("Documentation", book icon) with 4 navigation groups:
-  1. **Getting Started** — `introduction`, `quickstart`
-  2. **Agent** — migration, multiple-instances, health-monitoring
-  3. **NightOwl Features** — issues, alert-channels, smtp-setup, mcp-server, data-management
+- **First anchor** ("Documentation", book icon) with 4 navigation groups:
+  1. **Getting Started** — `introduction`, `quickstart`, `dashboard/test-connection`
+  2. **Agent** — configuration, filtering-and-context, production-deployment, remote-agent, vapor, running-alongside-nightwatch, multiple-instances, health-monitoring
+  3. **NightOwl Features** — issues, performance-thresholds, alert-channels, smtp-setup, mcp-server, data-management, agency
   4. **Performance** — throughput, postgresql-sizing
 - Second anchor ("Changelog", rss icon) holding the single `changelog` page
+- `redirects`: `/agent/migration-from-nightwatch` → `/agent/running-alongside-nightwatch` (the page was renamed; keep a redirect whenever a slug changes)
 - Global anchors (top-right): Agent README (GitHub), GitHub repo
 - Navbar: "Dashboard" link + "Get Started" signup button
+- Footer: GitHub + Discord socials, and a Contact column with `support@usenightowl.com`
 
 When adding a page, register it in `docs.json` under the appropriate navigation group.
 
@@ -104,7 +114,7 @@ Every page:
 
 ## Adding a Navigation Group
 
-Edit `docs.json` → `navigation.tabs[0].groups` — each group has `group` label + `pages` array (paths without `.mdx`).
+Edit `docs.json` → `navigation.anchors[0].groups` — each group has `group` label + `pages` array (paths without `.mdx`).
 
 ## Deployment
 

@@ -1,49 +1,78 @@
 ---
 title: "Multiple Instances"
-description: "Scale the NightOwl agent by running multiple instances for high-traffic applications."
+description: "Scale the NightOwl agent with more drain workers, or by running several agents for high-traffic applications."
 ---
 
-A single NightOwl agent handles ~13,400 payloads/s on modest hardware — enough for most production Laravel apps. When you need more, scale horizontally rather than vertically: run several agents on the same box (or several boxes), fan ingest across them, and share the same PostgreSQL destination.
+One agent is enough for most production Laravel apps. When it isn't, you have two levers: more drain workers inside one agent, and more agents, on one host or several, all writing to the same PostgreSQL database. See [Agent throughput](/performance/throughput) for measured numbers.
 
 ## When you need more than one instance
 
-- Your health dashboard shows buffer depth consistently climbing during peak hours.
-- A single agent can't keep ingest and drain aligned even after tuning drain workers.
-- You want redundancy — if one agent crashes, the application shouldn't lose telemetry while it restarts.
+- Agent Health shows the buffer climbing during peak hours and not coming back down.
+- One agent can't keep ingest and drain aligned even after adding drain workers.
+- You want redundancy: if one agent crashes, the others keep accepting telemetry while it restarts.
 
-If your bottleneck is drain (PostgreSQL writes) rather than ingest (TCP accept), start with `NIGHTOWL_DRAIN_WORKERS` before adding instances.
+If the bottleneck is the drain (writing to PostgreSQL) rather than ingest (accepting payloads), start with `NIGHTOWL_DRAIN_WORKERS` before adding agents.
 
 ## Scaling drain workers first
 
-Each agent runs one ingest loop plus N drain workers. Drain workers claim rows from the SQLite buffer atomically, so they never race.
+Each agent runs one ingest loop plus a number of drain worker processes. Set the number in the `.env` the agent reads, then restart the agent:
 
 ```env
 NIGHTOWL_DRAIN_WORKERS=4
 ```
 
-A good starting point is one drain worker per PostgreSQL vCPU, capped by how many connections PgBouncer can spare. If you see idle workers in the health dashboard, you've overshot.
+It takes 1 to 16. A higher value is lowered to 16 with a line in the agent log, and `0` or anything that isn't a number means 1. The agent prints the number it runs with at startup (`Drain workers: 4`).
+
+With more than one worker, each worker claims its rows in the buffer before writing them, so two workers never write the same row. Rows claimed but not yet written still count as pending, in back-pressure (`NIGHTOWL_MAX_PENDING_ROWS`) and in the pending rows on Agent Health and `/status`.
+
+Each worker holds its own PostgreSQL connection. Add workers while the drain rate on Agent Health keeps rising, and stop when it doesn't: past that point the database is the limit.
 
 ## Running multiple agents on one host (Linux)
 
-Linux's `SO_REUSEPORT` lets multiple processes bind the same TCP port; the kernel distributes accepted connections across them. Start agents with `NIGHTOWL_SO_REUSEPORT=true`:
+The ingest socket always sets `SO_REUSEPORT`, so several agents can listen on the same port, and on Linux the kernel spreads new connections across them. There is nothing to turn on. Each agent does need two things of its own:
 
-```bash
-# systemd / supervisord — spawn N identical workers
-NIGHTOWL_AGENT_PORT=2407 \
-NIGHTOWL_SO_REUSEPORT=true \
-NIGHTOWL_DRAIN_WORKERS=2 \
-php artisan nightowl:agent
+- **Its own buffer**, with `--sqlite-path` or `NIGHTOWL_AGENT_SQLITE_PATH`. A second agent pointed at a buffer another agent is using waits up to `NIGHTOWL_BUFFER_LOCK_WAIT` seconds (30 by default) for it to exit, and refuses to start if it's still running: `NightOwl agent will not start: another agent (pid N) is still using this buffer after 30s.` Two agents draining one buffer could write the same rows to PostgreSQL twice.
+- **Its own health port**, with `NIGHTOWL_HEALTH_PORT`, or no health API at all with `NIGHTOWL_HEALTH_ENABLED=false`. Otherwise the second agent stops at startup: `Could not start the agent: health port 127.0.0.1:2409 is already in use, often by another nightowl:agent on this host.`
+
+A systemd template unit gives each instance both, named after its health port:
+
+```ini
+# /etc/systemd/system/nightowl-agent@.service
+[Unit]
+Description=NightOwl Agent (health port %i)
+After=network.target postgresql.service
+
+[Service]
+User=www-data
+WorkingDirectory=/path/to/your/app
+Environment=NIGHTOWL_HEALTH_PORT=%i
+ExecStart=/usr/bin/php artisan nightowl:agent --sqlite-path=/path/to/your/app/storage/nightowl/agent-%i.sqlite
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-Run the same command as multiple units (e.g. `nightowl-agent@1`, `nightowl-agent@2`). Each process gets its own SQLite buffer file but writes to the same PostgreSQL database.
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now nightowl-agent@2409 nightowl-agent@2419
+```
+
+All instances write to the same PostgreSQL database.
 
 <Warning>
-  `SO_REUSEPORT` distributes connections round-robin on Linux only. On macOS the kernel gives every new connection to the first listener, so running multiple agents on the same port locally won't load-balance — use different ports during development.
+  **Cached config.** After `php artisan config:cache`, Laravel no longer reads environment variables, so the `Environment=` line above does nothing and every instance would try the same health port. Command-line options still apply: `--sqlite-path` (and `--host`, `--port`) keep working. With a cached config, drop the `Environment=` line and set `NIGHTOWL_HEALTH_ENABLED=false` in `.env` before caching. Agent Health in the dashboard doesn't use the local health API, so it keeps working.
+</Warning>
+
+<Warning>
+  `SO_REUSEPORT` spreads connections across agents on Linux only. On macOS every new connection goes to one listener, so several agents on one port won't share the load. Use different ports during local development.
 </Warning>
 
 ## Running multiple agents across hosts
 
-For horizontal scaling across machines, put a TCP load balancer (HAProxy, nginx stream module, or a cloud LB) in front of the agent pool. Point your application at the load balancer with `NIGHTOWL_INGEST_URI` — the `host:port` your app transmits telemetry to:
+For horizontal scaling across machines, put a TCP load balancer (HAProxy, the nginx stream module, or a cloud load balancer) in front of the agent pool. Point your application at the load balancer with `NIGHTOWL_INGEST_URI`, the `host:port` your app sends telemetry to:
 
 ```env
 # On your application (the instrumented app)
@@ -57,36 +86,31 @@ NIGHTOWL_AGENT_PORT=2407
 ```
 
 <Note>
-  `NIGHTOWL_INGEST_URI` (app side) and `NIGHTOWL_AGENT_HOST` (agent side) are two different knobs. `NIGHTOWL_AGENT_HOST` only controls the address the agent **binds** to — set it to `0.0.0.0` (or a specific interface) so the agent accepts connections from other hosts. `NIGHTOWL_INGEST_URI` controls where the **app transmits**. Both default to loopback, which is why a co-located single-host install needs neither.
+  `NIGHTOWL_INGEST_URI` (app side) and `NIGHTOWL_AGENT_HOST` (agent side) are two different settings. `NIGHTOWL_AGENT_HOST` only controls the address the agent **binds** to: set it to `0.0.0.0` (or a specific interface) so the agent accepts connections from other hosts. `NIGHTOWL_INGEST_URI` controls where the **app sends**. Both default to loopback, which is why a co-located single-host install needs neither. With `NIGHTOWL_AGENT_HOST=0.0.0.0` the health port (`2409`) listens on every interface too, so firewall it along with `2407`.
 </Note>
 
-Use a least-connections balancing policy. Agents are stateless from the app's perspective — any agent can accept any payload — so there's no sticky-session concern.
+Use a least-connections balancing policy. Any agent can accept any payload, so there's no sticky-session concern.
 
-## PostgreSQL and PgBouncer
+## PostgreSQL connections
 
-Every agent instance opens a pool of PostgreSQL connections. Without pooling, N agents × M drain workers quickly exhausts `max_connections`. The shipped `docker-compose.yml` includes a PgBouncer container on port 6432:
+Every drain worker holds one long-lived PostgreSQL connection, so the drain needs agents × workers connections: three agents with four workers each hold twelve. On top of that, each agent keeps one connection from its startup checks and opens short-lived ones for the hourly table statistics and for health alerts, and the NightOwl dashboard connects to read your data. Keep the total under the database's `max_connections`.
 
-```env
-DB_HOST=pgbouncer
-DB_PORT=6432
-```
+Point the agent at the database's own port or a session-mode pooler, not a transaction-mode pooler. The [quickstart](/quickstart#3-configure-environment-variables) explains why.
 
-Transaction-level pooling works cleanly with NightOwl's workload because drain batches are short-lived transactions.
+## Sizing
 
-## Sizing math
+Measured on a single instance:
 
-A rough budget for capacity planning:
+| Measurement | Result |
+| ----------- | ------ |
+| Ingest only, earlier benchmark | 13,400 payloads/s accepted |
+| July 2026 load test, one drain worker | about 9,200 payloads/s accepted at peak, about 2,500 payloads/s drained sustained |
+| Buffer | back-pressure above 100,000 pending rows (`NIGHTOWL_MAX_PENDING_ROWS`) |
 
-| Component        | Per-instance capacity |
-| ---------------- | --------------------- |
-| Ingest (TCP)     | ~13,400 payloads/s    |
-| Drain (1 worker) | ~5,600 rows/s (COPY)  |
-| SQLite buffer    | 100,000 rows max      |
-
-If your app sends 40,000 payloads/s at peak, you need at least three agents and enough drain workers in aggregate to sustain 40,000 rows/s — roughly 8 workers, spread across the three instances, backed by a PostgreSQL instance that can keep up.
+In the load test the drain was the limit. It ran with one drain worker; we haven't published a measurement with more. Size from your own Agent Health numbers: if the drain rate sits below your peak ingest rate for long enough to fill the buffer, add workers first, then agents. See [Agent throughput](/performance/throughput) for how the load test was run.
 
 ## Verifying the fan-out
 
-Open the health dashboard after starting the second agent. Each instance reports its own row in the **Instances** table with distinct process IDs, ingest rates, and buffer depths. The sum of the per-instance ingest rates should match your application's outgoing traffic.
+Open Agent Health after starting the second agent. Each agent reports its own row in the **Instances** table, named `hostname:pid`, with its own Ingest/s, Drain/s and Write Queue. The sum of the Ingest/s column should match your application's outgoing traffic.
 
-If one instance is getting all the traffic, check that `SO_REUSEPORT` is actually enabled — a common symptom is one agent doing 100% while the others sit at 0%.
+If one agent on a host takes all the traffic, check that the host is Linux, and that each agent really started: an agent that refused to start over a shared buffer or a busy health port leaves only the first one running.

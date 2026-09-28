@@ -37,6 +37,8 @@ Each machine reads its own `.env`. Setting a variable on the wrong side does not
 | `NIGHTOWL_INGEST_TIMEOUT` | ✅ | — |
 | `NIGHTOWL_AGENT_HOST` / `NIGHTOWL_AGENT_PORT` | — | ✅ where the daemon binds |
 | `NIGHTOWL_DB_*` | — | ✅ drain target |
+| `NIGHTOWL_CAPTURE_*`, `NIGHTOWL_PARALLEL_WITH_NIGHTWATCH` | ✅ | — |
+| `NIGHTOWL_IGNORE_ROUTES` | — | ✅ applied while draining |
 | Drain, retention, alert, and health settings | — | ✅ |
 
 ## Setup
@@ -71,6 +73,8 @@ Each machine reads its own `.env`. Setting a variable on the wrong side does not
     | Source   | your app servers' IPs (or the VPC subnet) |
 
     Telemetry travels over plain TCP (token-gated, not encrypted in transit), so never open `2407` to `0.0.0.0/0`.
+
+    With `NIGHTOWL_AGENT_HOST=0.0.0.0`, the health API (`NIGHTOWL_HEALTH_PORT`, default `2409`) listens on every interface as well, and it has no authentication. Leave `2409` closed in the firewall, or set `NIGHTOWL_HEALTH_ENABLED=false`. The dashboard's Agent Health page doesn't use it.
   </Step>
 
   <Step title="Point each app server at the agent">

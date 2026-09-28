@@ -1,0 +1,108 @@
+---
+title: "Agency"
+description: "Run monitoring for many client apps from one account: a team per client, onboarding templates, per-app access and app transfers."
+---
+
+The **Agency** plan is for running monitoring for many clients from one account. It has no limit on apps, teams or members, and adds four things the other plans don't have:
+
+| Feature | What it does |
+| ------- | ------------ |
+| Portfolio | Search and a worst-first **Apps** view across every client on the Apps page. |
+| Onboarding templates | Save a tuned app's alert channels and thresholds, then start the next client from them. Secrets are never copied. |
+| Per-app access | Invite a contractor to specific apps with one email-bound link, and review everyone's access in one matrix. |
+| App transfers | Hand a client's app to their own NightOwl account, with its history. |
+
+For comparison, Hobby allows 1 app, 1 team and 1 member, and Team allows 3 apps, 3 teams and 5 members per team.
+
+## One team per client
+
+Create one team for each client and connect that client's apps to it. Open the account menu, choose **Team**, and click **Create Team**. Everyone in a team can see that team's apps, and nothing outside it, so each client's data and people stay separate.
+
+Plan features on a team's apps follow the plan of the team's **owner**, and so does the team's member limit. When you own every client team, your one Agency subscription covers all of them. Connecting a new app counts against the plan of the person who connects it, across every team they belong to, so connect client apps from the Agency account.
+
+Every team member has one of three roles:
+
+| Role | Can |
+| ---- | --- |
+| Owner | Everything, including deleting and transferring apps. |
+| Admin | Manage the team's apps: alert channels, thresholds, settings, issues, templates, invitations and data deletion. |
+| Member | Read the apps' data. Members can't change issues, settings or channels, in the dashboard or through [MCP](/dashboard/mcp-server). |
+
+## The Apps page
+
+On Agency, the Apps page adds a **Search clients and apps** box and a **Teams** / **Apps** view switch:
+
+- **Teams** groups the apps by client team, in alphabetical order.
+- **Apps** shows one flat list, worst first: highest error rate, then most exceptions, then most 5xx responses. Apps with no data yet come last. The health on each card comes from the agents' health reports and refreshes every 30 seconds.
+
+## Onboarding templates
+
+A template holds one app's alert-channel structure, thresholds, environment colours and auto-resolve setting. It never holds secrets: SMTP passwords, webhook signing secrets, and the URLs of webhook, Slack and Discord channels are stripped when you save and again when you apply, because they belong to that client. Email recipients are saved, but when you apply the template, each email channel keeps only the recipients who are members of the target app's team.
+
+### Save and sync
+
+1. Open the app you've tuned and go to **Settings**. The **Onboarding template** card sits above the tabs.
+2. Click **Save as template**. The toast reads *Template saved (secrets excluded).*
+3. When you change that app later, click **Sync now** on the same card to update the template. The card shows when it was last synced.
+
+Each app has at most one template of its own, and only that app can sync it. Rename or delete templates on the **Templates** page (account menu → **Account** → **Templates**). That page and the template pickers list only the templates of apps you can open. Deleting a template doesn't change the app it came from or any app it was applied to. Saving, syncing and applying need the owner or admin role.
+
+### Start a new client from a template
+
+<Warning>
+  Create the NightOwl tables in the client's database **before** you connect the app: run `php artisan nightowl:install` (or `php artisan nightowl:migrate`) in the client's Laravel app with its `NIGHTOWL_DB_*` settings. The template is written into those tables. Without them, the app is created but the template isn't applied, and the dashboard says *App created, but the template could not be applied. Configure settings manually or retry.*
+</Warning>
+
+1. On the Apps page, click **Connect App** in the client's team section.
+2. Fill in the database connection and choose a template under **Start from template**.
+3. Click **Save**. The **App connected successfully** banner shows the agent token once. Copy it before you leave the page.
+
+Every channel the template creates arrives **turned off**. Under **Channels to finish setting up**, the banner lists each channel that still needs something, by name, type and field (for example *Pager hook (Webhook): URL, signing secret* or *On-call (Email): SMTP password*), with a link to **Settings → Alerts**. When an email channel lost recipients who aren't on this app's team, the banner names them under the channel (*Removed recipients: ...*). An email channel left with no recipients shows *recipients* as a field to fill in. Add each value in **Settings → Alerts** with the channel's pencil, then switch the channel on. Until you do, NightOwl sends nothing through it, and enabling a channel that still lacks its secret or its recipients is refused. Thresholds and the other settings take effect straight away; the agent picks them up within about 30 seconds.
+
+### Apply a template to an existing app
+
+When another app has a template, the **Onboarding template** card on an app's **Settings** also offers **Apply a template**. Pick the template and click **Apply & override**.
+
+This **replaces** the app's configuration: every existing alert channel is deleted (with its saved secrets), and its thresholds, environment colours and issue settings are set to the template's. The replaced channels arrive turned off and without their secrets, email channels keep only the recipients on this app's team, and the card lists what to fill in and any recipients it removed. It can't be undone.
+
+## Access for contractors
+
+On Agency, the **Teams** page has two tabs:
+
+- **Teams access** lists each team with its members and their roles. Owners and admins can invite people to a whole team, change roles and remove members here.
+- **Apps access** invites people to specific apps and shows the access matrix.
+
+### Invite someone to specific apps
+
+In **Apps access**, pick a mode:
+
+- **One person → many apps**: one link that adds one person to every selected app.
+- **Many people → one app**: one link for one app, for several people.
+
+Choose the **Role** (Member reads the data, Admin also manages the app), when the link expires (**7 days**, **14 days**, **30 days** or **Never**), and the apps. Click **Create invite link**. The link is copied to your clipboard; send it to the person yourself.
+
+Only the addresses you entered can accept the link, so a forwarded link grants nothing. The person signs in (or signs up) with that address and accepts. They join each app's team as a member limited to the invited apps, so they don't see the team's other apps.
+
+### The access matrix
+
+The **Access matrix** shows *who has access to each app you own or admin*: one row per person, one column per app, with their role on each. Owners and admins of a team always have access to every app in it.
+
+- **Edit app access** (the pencil on a row) opens **Edit access**, with the apps grouped by team. Set each app to **None**, **Member** or **Admin**. In a team where the person is a member, **All apps** gives them every app in that team, including apps added later. In teams where they are owner or admin, their apps show as **Owner** or **Team admin** and can't be changed here, because those roles always see every app.
+- **Remove from all apps** takes the person off every app and team you manage in one step. Team owners are never removed this way.
+
+A member limited to some apps stays limited. If you set all of their apps in a team to **None**, or transfer or delete the last app they had there, they stay in the team with no apps. The matrix flags them, for example *No apps in Acme*, and their row on **Teams access** reads *No apps*. To give them every app in that team again, tick **All apps** in **Edit access**.
+
+To take someone off a client completely, remove them from that team on the **Teams access** tab, or use **Remove from all apps**.
+
+## App transfers
+
+When a client takes their app in-house, transfer it to their own NightOwl account.
+
+1. The recipient creates a NightOwl account first. A transfer can only go to an existing account.
+2. On the app's **Settings**, open the **Danger Zone** tab. In **Transfer Ownership**, enter the recipient's email and click **Send transfer request**. Only the team owner can send one.
+3. The recipient gets an email with a **Review Transfer** button. The request expires after 7 days. You can cancel it while it's pending, and an app can have only one pending transfer at a time.
+4. The recipient accepts into a team they own, or creates a new team for it. Their own plan's limits apply: accepting is refused if it would take them over their app limit, or over their team limit when they create a new team.
+
+The app moves with its agent token and its database connection. Its history and alert channels live in the client's own database, so they come along with no export, and the agent keeps running unchanged. People in your team lose access to the app once it moves, and pending app invitations no longer include it.
+
+If the app is deleted or moved, or the person who sent the request is no longer the team's owner, accepting is refused with *This transfer is no longer valid. Ask the app owner to send a new one.*

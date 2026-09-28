@@ -1,0 +1,70 @@
+---
+title: "Test Connection Results"
+description: "What each Test Connection result means when you connect an app's PostgreSQL database, and how to clear it."
+---
+
+When you connect an app (**Apps → Connect App**) or edit its connection, **Test Connection** checks three things from NightOwl's servers: that they can reach your database, that the username and password work, and that the NightOwl tables are there and readable. It connects, runs `SELECT 1` and checks the tables. It never writes. The credentials you test here are the ones the dashboard uses to read your telemetry.
+
+The test is optional. **Save** doesn't run it, so a wrong password or a missing table isn't caught unless you test first.
+
+## The results
+
+The button changes to show the result. Anything other than **Connected!** comes with a message under the buttons.
+
+| Button reads | What it means | What to do |
+| ------------ | ------------- | ---------- |
+| **Connected!** | NightOwl reached the database, logged in, and can read the NightOwl tables. | Nothing. Save the app. |
+| **Connected — schema missing** | The login works, but the NightOwl tables aren't in this database yet. | Normal before the first install. Run `php artisan nightowl:install` (or `php artisan nightowl:migrate`) in the monitored app with its `NIGHTOWL_DB_*` settings pointing at this database, then test again. |
+| **Connected — no read access** | The tables exist, but this role can't read them. | Use the same role as the agent, or grant this one the access the message lists: `SELECT`, `INSERT`, `UPDATE` and `DELETE` on the `nightowl_*` tables and `USAGE` on their sequences (see [Separate roles](#separate-roles)). |
+| **Failed — retry** | NightOwl couldn't connect, or refused to try. | Read the message; see [Failure messages](#failure-messages). |
+
+"Schema missing" means neither `nightowl_requests` nor `nightowl_requests_v2` is visible to this role. The check honours the role's `search_path`, so tables installed in another schema read as missing unless that schema is on the role's path.
+
+## Failure messages
+
+<AccordionGroup>
+  <Accordion title="Host must be publicly routable.">
+    NightOwl's servers connect to your database over the internet, so they refuse `localhost`, private addresses (`10.x.x.x`, `172.16.x.x` to `172.31.x.x`, `192.168.x.x`), reserved addresses, and hostnames with no public DNS record. Use your provider's public hostname. If the database sits behind a firewall or an IP allowlist, allow NightOwl's address as described in the [Quick Start](/quickstart). Saving the app refuses the same hosts.
+  </Accordion>
+  <Accordion title="Could not connect to the database. Check host, port, and credentials.">
+    NightOwl couldn't connect or log in. It waits up to 5 seconds for the connection. The exact reason is logged on NightOwl's side but not shown, so check each of these:
+
+    - The host and port are right, and the port is open to NightOwl (firewall, security group, allowlist).
+    - The username and password are right. Paste them again rather than retyping.
+    - The database exists. NightOwl creates tables, not the database: on Supabase use `postgres`, on Neon `neondb`, or create one first.
+    - The database is running and accepting connections.
+  </Accordion>
+  <Accordion title="Enter the password to test a changed connection.">
+    You're editing an app, left the password empty, and changed the host, port, database or username. See [Testing while editing an app](#testing-while-editing-an-app).
+  </Accordion>
+  <Accordion title="A field is rejected before the test runs">
+    Host, port, database and username are required, the port must be between 1 and 65535, and the database name may contain only letters, digits, `_`, `-` and `.`.
+  </Accordion>
+</AccordionGroup>
+
+## Testing while editing an app
+
+The edit form never shows the saved password; its field reads *Leave blank to keep current*. If you leave it blank, **Test Connection** uses the saved password, as long as the host, port, database and username are exactly the ones it was saved with. If you changed any of them, type the password: NightOwl never sends a saved password to a connection it wasn't saved for.
+
+**Save** follows the same rule. Once you change the host, port, database or username, the form asks for the password (*You changed the connection, so enter its password to test or save.*), and **Test Connection** and **Save** stay disabled until you type it. Saving a changed connection without it is refused with `Enter the password to save a changed connection.` Over MCP, `update-app-tool` needs `db_password` for the same changes.
+
+Testing with the saved password needs the owner or admin role on the app. It is also refused while the plan of the team's owner has lapsed, with the same message the rest of the dashboard shows, for example *This team's owner needs to renew their subscription before you can access it.*
+
+If the dashboard shows **Can't reach your database** for an app, its **Edit connection** button opens this form, so you can fix the connection and test it there.
+
+## Separate roles
+
+The test only checks that the role can **read** the NightOwl tables. The dashboard also writes to some of them: issue status, comments and activity, alert channels, settings, and the rows Data Management deletes. A role that can only `SELECT` passes the test and then fails the first time someone resolves an issue or saves a setting.
+
+The simplest setup is one role for both: enter the same username and password here as in the agent's `NIGHTOWL_DB_USERNAME` and `NIGHTOWL_DB_PASSWORD`. If the dashboard must use a separate role, give it `SELECT`, `INSERT`, `UPDATE` and `DELETE` on the `nightowl_*` tables and `USAGE` on their sequences. Agent upgrades can add tables, so also set default privileges for new tables, running `ALTER DEFAULT PRIVILEGES` as the role that runs `nightowl:migrate`. Default privileges can't be limited to the `nightowl_*` names: they cover every table that role creates in the schema from then on, including your app's tables if the same role creates them.
+
+When the dashboard's role is refused access to the NightOwl tables, the dashboard opens a **Grant NightOwl access** page. It shows these grants as SQL for the role the app is saved with, ready to copy.
+
+The agent's own write access isn't checked here, because it uses its own credentials. If it can't write, [Agent Health](/agent/health-monitoring) reports it.
+
+## What else to check
+
+- **Use the direct or session connection on port `5432`**, not a transaction-mode pooler, for the agent. The [Quick Start](/quickstart) explains why and names the right endpoint on Supabase and Neon.
+- **Size the database for your traffic.** See [PostgreSQL sizing](/performance/postgresql-sizing).
+- **Connection string.** Pasting a `postgres://` or `postgresql://` URL into **Connection String** fills in the fields below it. The test uses those fields.
+- **Over MCP**, `test-app-connection-tool` runs the same connection and table checks, except the read-access check.

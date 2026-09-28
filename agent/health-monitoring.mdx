@@ -1,61 +1,108 @@
 ---
 title: "Health Monitoring"
-description: "Monitor the health status of your NightOwl agent and connected applications."
+description: "Read Agent Health in the dashboard and the agent's local /status endpoint, and know when to act."
 ---
 
-The NightOwl health dashboard gives you real-time visibility into the agent process that sits between your application and your PostgreSQL database. Use it to confirm that telemetry is flowing, to diagnose back-pressure before it becomes data loss, and to decide when to scale horizontally.
+Two places show how the agent is doing. The **Agent Health** page in the dashboard reads the health reports each agent sends to NightOwl. The agent's own `/status` endpoint answers on the host where it runs. Both carry the same numbers.
 
 ## Where to find it
 
-In the dashboard, open your app and click **Health** in the sidebar. The page polls every 10 seconds while open and reads directly from the agent's metrics SQLite file — no extra round-trip to PostgreSQL.
+In the dashboard, open your app and click **Agent Health** in the sidebar. It's part of the Team and Agency plans, and it follows the plan of the team that owns the app.
 
-## The three signals that matter
+Every running agent sends a health report to NightOwl, every 30 seconds by default (`NIGHTOWL_HEALTH_REPORT_INTERVAL`), authenticated with `NIGHTOWL_TOKEN`. The page reads those reports, not your database, so it keeps working while your database is down: the other pages of the app switch to "Can't reach your database", and that page links back to Agent Health. It also stays open when the NightOwl tables aren't installed yet, or when the dashboard's database role can't read them. While it's open, the page refreshes every 15 seconds (every 8 when degraded, every 5 when critical), and the charts refresh every minute.
 
-<CardGroup cols={3}>
-  <Card title="Ingest rate" icon="download">
-    Payloads accepted per second over the last minute. On a single instance a healthy agent ingests up to ~13,400 payloads/s.
-  </Card>
-  <Card title="Drain rate" icon="upload">
-    Rows written to PostgreSQL per second. Drain should keep pace with ingest; a persistent gap means the buffer is filling.
-  </Card>
-  <Card title="Buffer depth" icon="database">
-    Pending rows sitting in the SQLite WAL buffer. Grows when drain lags ingest; the agent rejects new payloads once it hits 100,000.
-  </Card>
-</CardGroup>
+An agent without a token doesn't report, and `NIGHTOWL_HEALTH_REPORT_ENABLED=false` turns the reports off. The sync driver (`--driver=sync`) never reports.
 
-## Reading the charts
+## What the page shows
 
-- **Ingest vs. drain** — the two lines should track each other. If drain flattens while ingest keeps climbing, PostgreSQL is the bottleneck (check the `postgresql-sizing` guide).
-- **Buffer depth** — a steady sawtooth is normal: ingest fills, drain empties in 5,000-row batches. A monotonically rising line is the early warning for back-pressure.
-- **Drain batch latency** — time to `COPY` one batch. Sustained values above a second usually mean PostgreSQL is IO-bound or connection-starved.
+- **Status banner.** `HEALTHY`, `DEGRADED` or `CRITICAL`, the health score, and the time of the last report. When the newest report is more than two minutes old it adds "Data may be stale — agent may be offline".
+- **Instances.** One row per running agent process, named `hostname:pid`, with its health, **Ingest/s** (payloads accepted per second), **Drain/s** (buffered payloads written to PostgreSQL per second), **PG Latency**, **Write Queue** (pending rows as a share of `NIGHTOWL_MAX_PENDING_ROWS`), **CPU**, **Memory**, **Reject** and **Last Seen**. An agent that hasn't reported for 60 seconds drops off the list. With none left, the table reads "No active agent instances".
+- **Diagnoses.** Each open or recently resolved problem, with its message, the recommended fix, the instance and a code. Filter by Open or Resolved, and by Critical, Warning or Info.
+- **Performance History.** Four charts over the page's time range: **Throughput (all instances)** with Ingest and Drain lines, **Buffer (total pending)**, **Postgres Latency (avg)** and **Health Score (worst instance)**.
 
-## Status banners
+Ingest and drain should track each other. If Drain/s stays below Ingest/s, the buffer grows, and the Buffer chart climbs steadily instead of rising and falling.
 
-<AccordionGroup>
-  <Accordion title="Agent offline">
-    The health file hasn't been touched in the last 30 seconds. The agent process likely crashed or was never started. Check `supervisord` / systemd logs for the `nightowl:agent` worker.
-  </Accordion>
-  <Accordion title="Buffer near capacity">
-    Buffer depth is above 80,000 rows. Ingest will start rejecting payloads at 100,000. Scale drain workers (see `NIGHTOWL_DRAIN_WORKERS`) or add a PostgreSQL replica.
-  </Accordion>
-  <Accordion title="Drain stalled">
-    Drain rate has been zero for longer than one minute while ingest is non-zero. Almost always a PostgreSQL connection issue — verify credentials, PgBouncer, and `max_connections`.
-  </Accordion>
-  <Accordion title="No recent payloads">
-    Ingest rate has been zero for 5+ minutes. Your application may not be sending. Confirm `NIGHTOWL_TOKEN` in the customer app's `.env` matches the token shown in the dashboard's Settings → Agent token, and that the `laravel/nightwatch` package is installed and booted.
-  </Accordion>
-</AccordionGroup>
+## How the health score works
+
+Each agent scores itself every 10 seconds. It starts at 100 and loses 25 points for each critical diagnosis, 10 for each warning and 2 for each info, down to 0. A diagnosis counts once it has held for two checks in a row.
+
+| Score | Status |
+| ----- | ------ |
+| 80 to 100 | healthy |
+| 40 to 79 | degraded |
+| below 40 | critical |
+
+With several agents, the banner shows the worst case. If any agent is critical, the app is critical and shows the lowest score. Otherwise, if more than 30% of the agents are degraded or have stopped reporting, it's degraded and shows the average score. Otherwise it's healthy with the average. If every agent has been silent for more than three minutes, it's critical.
+
+## Diagnoses you're most likely to see
+
+Every diagnosis on the page carries its own recommendation. These are the common ones:
+
+| Code | Severity | When it fires |
+| ---- | -------- | ------------- |
+| `DRAIN_UNREACHABLE` | critical | The drain can't connect to PostgreSQL. Telemetry stays in the buffer and drains once the connection is back. |
+| `DRAIN_WRITE_FAILING` | critical | PostgreSQL is reachable but rejects the writes, for example a missing table or a missing grant. The message names the SQLSTATE and the table. |
+| `DRAIN_STOPPED` | critical | Nothing is draining while more than 100 rows wait, and no other diagnosis explains why. |
+| `DRAIN_WEDGED` | critical | A drain worker has been stuck inside one database call for longer than `NIGHTOWL_DRAIN_WEDGE_WARN_SECONDS` (180 by default). |
+| `DRAIN_FALLING_BEHIND` | warning | Ingest is more than 1.5 times the drain rate, with over 5,000 rows waiting. |
+| `BACKLOG_HIGH` / `BACKLOG_CRITICAL` | warning / critical | Pending rows pass 50% / 80% of `NIGHTOWL_MAX_PENDING_ROWS`. |
+| `BACK_PRESSURE_ACTIVE` | critical | The agent is rejecting payloads because the buffer or its memory limit is full. |
+| `PG_LATENCY_HIGH` / `PG_LATENCY_CRITICAL` | warning / critical | PostgreSQL write latency is above 500 ms / 2 seconds. |
+| `REJECT_RATE_HIGH` / `REJECT_RATE_CRITICAL` | warning / critical | More than 2% / 10% of incoming payloads are rejected. |
+| `MEMORY_HIGH` | warning | The agent uses more than 70% of `NIGHTOWL_MAX_BUFFER_MEMORY`. |
+| `CPU_HIGH` / `CPU_SATURATION` | warning / critical | Host CPU is above 70% / 90%. |
+| `SYSTEM_MEMORY_HIGH` / `SYSTEM_MEMORY_CRITICAL` | warning / critical | Host memory is more than 75% / 90% used. |
+| `ROLLUP_STALE` | critical | A summary table behind the wide-range charts has stopped being written while its raw telemetry keeps arriving. |
+| `ROLLUP_BACKFILL_PENDING` | info, then warning | The summary rebuild an upgrade owes hasn't finished. It turns into a warning after 6 hours. |
+
+## Health alerts
+
+When a warning or critical diagnosis starts, the agent sends a `health.degraded` alert to your alert channels, and a `health.recovered` alert when it clears. Info diagnoses don't alert. The agent sends these itself, from your server, to the enabled channels under **Settings → Alerts** that include those events.
+
+Emails have a **View agent health** button that opens this page. Slack and Discord messages end with a "View agent health" link, and webhook payloads carry `app_id` and `view_url`. The link is built from `NIGHTOWL_DASHBOARD_URL` and `NIGHTOWL_APP_ID`. Without `NIGHTOWL_APP_ID` it opens the dashboard home.
+
+The alert channels live in the same database the agent drains into, which may be the thing that's down. So the agent saves the channel list next to its buffer, in `storage/nightowl/agent-buffer.sqlite.alert-channels.json` by default: about 5 seconds after it starts, every 15 minutes after that, and each time it sends a health alert. When the database can't be reached, or doesn't answer the channel query within 5 seconds (a migration holding a lock on the channel table, for example), it sends to that saved list and logs `Could not read alert channels from the database (...). Using the saved list at ...`. If a refresh fails, the agent keeps the last saved list and logs `Could not refresh the saved alert channel list at ...`. Only an agent that has never reached the database, with no list saved by an earlier run, has nothing to send to during an outage. An alert round or a refresh that is still running after 180 seconds is stopped, and the agent logs `Health alert dispatch was stopped after 180s. The database or an alert channel did not answer.` (or `Alert channel refresh was stopped after 180s. ...`). Later alerts go out as usual.
+
+<Warning>
+  The saved list holds the channels' settings as stored, SMTP passwords and webhook secrets included. The file is created with mode `0600`. When `storage/nightowl/` has no `.gitignore`, `nightowl:agent` writes one that ignores everything in the directory, and it never replaces a file that is already there. It does the same for a custom buffer directory (`NIGHTOWL_AGENT_SQLITE_PATH`) that it creates inside your app. Keep the directory out of backups you share.
+</Warning>
 
 ## What to do when it's unhealthy
 
-1. **Persistent drain lag** → increase drain workers: `NIGHTOWL_DRAIN_WORKERS=4` (one worker per PostgreSQL core is a reasonable ceiling).
-2. **Connection churn** → put PgBouncer in front of PostgreSQL. The bundled `docker-compose.yml` ships a ready configuration on port 6432.
-3. **Single-instance ceiling** → run multiple agent instances behind `SO_REUSEPORT`. See [Multiple Instances](/agent/multiple-instances).
-4. **PostgreSQL saturation** → check `pg_stat_activity`, tune `synchronous_commit = off`, or upgrade disk. See [PostgreSQL sizing](/performance/postgresql-sizing).
+1. **The drain can't keep up.** Raise `NIGHTOWL_DRAIN_WORKERS` (1 to 16) and restart the agent. Each worker holds its own PostgreSQL connection, so check that `max_connections` has room. See [Multiple instances](/agent/multiple-instances#scaling-drain-workers-first).
+2. **PostgreSQL is slow.** Check `pg_stat_activity`, disk and CPU on the database server. See [PostgreSQL sizing](/performance/postgresql-sizing).
+3. **One agent isn't enough.** Run several. On one Linux host they share the ingest port automatically, each with its own buffer and health port. See [Multiple instances](/agent/multiple-instances).
+4. **Nothing arrives at all.** Check that `nightowl:agent` is running under your supervisor, and that `NIGHTOWL_TOKEN` matches on the app and the agent.
+
+## The `/status` endpoint
+
+The agent also serves its numbers locally, on `NIGHTOWL_HEALTH_PORT` (default `2409`):
+
+```bash
+curl http://127.0.0.1:2409/status
+```
+
+It returns JSON with HTTP 200 whenever the agent process is up, whatever its health, so read the body to catch a problem. The fields worth alerting on:
+
+| Field | Meaning |
+| ----- | ------- |
+| `status` | `healthy`, `degraded` or `critical` |
+| `health_score` | 0 to 100, as described above |
+| `ingest.rate_1m` | Payloads accepted per second, averaged over the last minute |
+| `ingest.reject_pct` | Share of payloads rejected |
+| `drain.rate_1m` | Payloads written to PostgreSQL per second, averaged over the last minute |
+| `drain.pg_latency_ms` | PostgreSQL write latency |
+| `drain.batches_failed` | Drain batches that failed |
+| `buffer.pending_rows` | Rows waiting in the buffer, including rows a drain worker has claimed but not yet written |
+| `buffer.utilization_pct` | `pending_rows` as a share of `NIGHTOWL_MAX_PENDING_ROWS` |
+| `buffer.back_pressure_active` | `true` while new payloads are being rejected |
+| `diagnoses` | The active diagnoses, each with `code`, `level`, `message` and `recommendation` |
+
+The response also carries `uptime_seconds`, `agent_version`, process and host metrics, and `resolved_diagnoses`. See [Production deployment](/agent/production-deployment#health-checks) for health checks, Kubernetes probes, and which address the endpoint listens on.
 
 ## Visibility from the host application
 
-When the agent returns `5:ERROR` (back-pressure, token mismatch, malformed payload), the `laravel/nightwatch` SDK in your application drops the current batch and silently swallows the error — no retry, no in-memory buildup, no host crash, but also no log line by default. The dashboard's reject rate chart already shows the picture on the receiving side. To log it from inside the host app, register a handler in `AppServiceProvider::boot()`:
+When the agent rejects a payload (back-pressure, a token mismatch, a malformed payload) or can't be reached, the `laravel/nightwatch` SDK in your application drops that batch and the request carries on: no retry, no build-up in memory. NightOwl writes a line to PHP's error log, starting `[NightOwl Support] MultiIngest`, and passes the error to Nightwatch's handler for unrecoverable exceptions. The **Reject** column on Agent Health shows the same thing from the agent's side. To log it your own way, register a handler in `AppServiceProvider::boot()`:
 
 ```php
 use Illuminate\Support\Facades\Log;
@@ -66,13 +113,13 @@ Nightwatch::handleUnrecoverableExceptionsUsing(function (\Throwable $e) {
 });
 ```
 
-Pipe to Sentry, Bugsnag, or any logger. The handler slot is single-occupant — if you already register your own elsewhere, only the most recent registration runs.
+Pipe it to Sentry, Bugsnag, or any logger. The handler slot holds one callback: if you already register your own elsewhere, only the most recent registration runs.
 
 ## Raw metrics for external monitoring
 
-The agent writes a JSON metrics file next to the SQLite buffer for Prometheus, Datadog, or a cron-scraped shell script.
+For Prometheus, Datadog or a cron script, `/status` is the simplest source: it already combines every drain worker. The drain workers also write their own metrics next to the SQLite buffer, which the agent reads to build `/status`:
 
-- **Single-worker (default)** — `storage/nightowl/agent-buffer.sqlite.drain-metrics.json`
-- **Multi-worker (`NIGHTOWL_DRAIN_WORKERS > 1`)** — one file per worker, suffixed with the worker id: `storage/nightowl/agent-buffer.sqlite.drain-metrics-{id}.json`
+- **One worker (the default).** `storage/nightowl/agent-buffer.sqlite.drain-metrics.json`
+- **Several workers (`NIGHTOWL_DRAIN_WORKERS` above 1).** One file per worker, numbered from 0: `storage/nightowl/agent-buffer.sqlite.drain-metrics-{id}.json`
 
-When you scale horizontally, configure your scraper to glob `*.drain-metrics-*.json` so you don't miss rows from worker 2 onward.
+If you read these files directly, glob `*.drain-metrics*.json` so you get every worker.

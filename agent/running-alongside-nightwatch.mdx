@@ -1,11 +1,13 @@
 ---
 title: Running Alongside Nightwatch
-description: Run NightOwl alongside Nightwatch's hosted agent — compare dashboards before switching.
+description: Run NightOwl alongside Nightwatch's hosted agent and compare dashboards before switching.
 ---
 
-Already using Nightwatch and not ready to fully switch? You can run both agents side by side. The Nightwatch collector sends telemetry to both, so you can compare them in parallel before committing.
+Already using Nightwatch and not ready to fully switch? Run both agents side by side. In parallel mode the Nightwatch SDK in your app sends every record twice: once to the Nightwatch agent, exactly as before, and once to the NightOwl agent.
 
-## 1. Enable parallel mode in `.env`
+## 1. Add the parallel settings before you install
+
+Add these to `.env` **before** `composer require nightowl/agent`. The package takes over Nightwatch's collector as soon as it's installed, and until `NIGHTOWL_PARALLEL_WITH_NIGHTWATCH=true` is set it runs standalone, where Nightwatch's own copy is no longer sent.
 
 ```env
 NIGHTOWL_PARALLEL_WITH_NIGHTWATCH=true
@@ -17,26 +19,49 @@ NIGHTWATCH_TOKEN=your-nightwatch-token
 
 <Note>
   `NIGHTWATCH_TOKEN` is used by the Nightwatch collector to authenticate
-  outbound telemetry. `NIGHTOWL_TOKEN` is the token from the NightOwl dashboard
-  — the NightOwl agent uses it for payload authentication and health reporting.
-  `NIGHTOWL_APP_ID` is the connected-app ID shown alongside the token; the
+  outbound telemetry. `NIGHTOWL_TOKEN` is the token from the NightOwl dashboard.
+  The NightOwl agent uses it for payload authentication and health reporting.
+  `NIGHTOWL_APP_ID` is the connected-app ID shown alongside the token. The
   agent embeds it in alert payloads so issue links resolve to this app.
 </Note>
 
-That's all the configuration needed. The NightOwl agent's service provider detects the flag and wraps Nightwatch's `$core->ingest` so records fan out to both agent ports.
+Then install and set up NightOwl as in the [quickstart](/quickstart). The service provider sees the flag and wraps Nightwatch's ingest so records go to both agents. Records written while your app boots, in any service provider's `boot()`, reach both agents too.
+
+If you cache configuration, run `php artisan config:cache` after changing `.env`, and restart your queue workers and Octane (or reload PHP-FPM) so every process picks up the new values. With a cached config, `.env` changes have no effect until you do.
 
 ## 2. Run both agents
 
 ```bash
-# Terminal 1 — Nightwatch agent (port 2407)
+# Terminal 1: Nightwatch agent (port 2407)
 php artisan nightwatch:agent
 
-# Terminal 2 — NightOwl agent (port 2410)
+# Terminal 2: NightOwl agent (port 2410)
 php artisan nightowl:agent
 ```
 
-Both agents receive identical telemetry. If one goes down, the other keeps running.
+In production, give each its own supervisor program (see [Production deployment](/agent/production-deployment)). If a NightOwl agent was already running before you set `NIGHTOWL_AGENT_PORT=2410`, restart it: the agent reads its port only when it starts.
+
+Both agents receive the same telemetry. If one goes down, the other keeps running.
+
+## Where each copy is sent
+
+Each copy has its own address setting, and NightOwl reads only its own:
+
+| Copy | Goes to | Set with |
+| ---- | ------- | -------- |
+| Nightwatch's | the Nightwatch agent | `NIGHTWATCH_INGEST_URI` (default `127.0.0.1:2407`) |
+| NightOwl's | the NightOwl agent | `NIGHTOWL_INGEST_URI` (default `127.0.0.1` on `NIGHTOWL_AGENT_PORT`) |
+
+NightOwl never reads `NIGHTWATCH_INGEST_URI`. If your Nightwatch agent runs in another container or on another host and you point the app at it with `NIGHTWATCH_INGEST_URI`, set `NIGHTOWL_INGEST_URI` to the NightOwl agent's address as well. Otherwise NightOwl's copy goes to `127.0.0.1` on the app's own machine, where nothing listens, and is dropped. The same applies after you switch: in standalone mode Nightwatch's ingest address is ignored entirely. See [Dedicated monitoring server](/agent/remote-agent) for running the NightOwl agent on another host.
 
 ## Switching fully to NightOwl
 
-Set `NIGHTOWL_PARALLEL_WITH_NIGHTWATCH=false` (or remove it) and set `NIGHTOWL_AGENT_PORT=2407`. The Nightwatch collector now ships exclusively to the NightOwl agent. Stop the `nightwatch:agent` process. Done.
+Keep the NightOwl agent where it is, on port 2410, and change only the app:
+
+1. Set `NIGHTOWL_PARALLEL_WITH_NIGHTWATCH=false` (or remove the line). Leave `NIGHTOWL_AGENT_PORT=2410` as it is.
+2. Let the app pick up the change: `php artisan config:cache` if you cache configuration, then restart your queue workers and Octane, or reload PHP-FPM.
+3. Stop `nightwatch:agent` and remove it from your supervisor.
+
+The NightOwl agent keeps listening on 2410 the whole time and needs no restart, so nothing is dropped during the switch. From then on the app sends only NightOwl's copy.
+
+Moving NightOwl to port 2407 afterwards is optional. It means changing `NIGHTOWL_AGENT_PORT` for both the agent and the app and restarting the agent, and anything your app sends while no agent listens on the new port is lost. Stop `nightwatch:agent` first, or the NightOwl agent can't bind 2407.

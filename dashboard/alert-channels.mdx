@@ -1,75 +1,83 @@
 ---
 title: "Alert Channels"
-description: "Configure notification channels for issue alerts — Email, Slack, Discord, and Webhooks."
+description: "Configure notification channels for issue and agent health alerts: Email, Slack, Discord, and Webhooks."
 ---
 
-Alert channels decide *where* NightOwl tells you something needs attention. They're configured per app in **Settings → Alert Channels**, and every enabled channel fires for the same set of triggers — so you can mix a noisy Slack firehose with a quiet email summary without re-wiring your issue workflow.
+Alert channels decide *where* NightOwl tells you something needs attention. They're configured per app in **Settings → Alerts**, which has three sections: **Email**, **Integrations** (Slack and Discord) and **Webhooks**. Each channel has its own **Notify on** checkboxes, so you can send every event to a Slack firehose and only new issues to email. Viewing and changing channels needs the owner or admin role on the app.
 
 ## What fires an alert
 
-Alerts are issue-lifecycle events, not per-occurrence:
+Alerts follow the issue lifecycle and the agent's health, not individual occurrences:
 
-| Event            | When it fires                                                                                                                          |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `issue.new`      | A brand-new fingerprint is seen for the first time. Emitted directly from the agent's drain worker.                                    |
-| `issue.reopened` | A previously resolved issue's fingerprint recurs (auto-reopen by the agent), **or** a user manually reopens an ignored/resolved issue from the dashboard, MCP, or API. The agent flips `status` back to `open` and appends a `status_changed` activity row with `actor_type='agent'`. |
-| `issue.resolved` | A user resolves the issue from the dashboard, MCP, or API.                                                                             |
-| `issue.ignored`  | A user ignores the issue from the dashboard, MCP, or API.                                                                              |
+| Event              | Notify on label        | When it fires |
+| ------------------ | ---------------------- | ------------- |
+| `issue.new`        | New issues             | A fingerprint is seen for the first time: a new exception, the first record at or over a [performance threshold](/dashboard/performance-thresholds), or sustained worker saturation. Sent by the agent. |
+| `issue.reopened`   | Reopened issues        | A resolved issue's fingerprint recurs (the agent reopens it), **or** someone reopens an issue from the dashboard, MCP or the API. |
+| `issue.resolved`   | Resolved issues        | Someone resolves the issue from the dashboard, MCP or the API. Issues closed by [auto-resolve](/dashboard/issues#auto-resolve-stale-issues) send nothing. |
+| `issue.ignored`    | Ignored issues         | Someone ignores the issue from the dashboard, MCP or the API. |
+| `health.degraded`  | Agent health alerts    | A warning or critical [agent health](/agent/health-monitoring) diagnosis becomes active. Sent by the agent. |
+| `health.recovered` | Agent health recovered | That diagnosis clears. Sent by the agent. |
 
-Individual exceptions *within* an already-open or already-ignored issue bump the occurrence count silently — they don't re-alert. This keeps incident storms from flooding every channel, and keeps "ignored" meaningful (ignoring an issue permanently silences future occurrences, not just the one in front of you). `resolved` is different: a recurrence is treated as a regression, so the agent auto-flips the status back to `open` and fires `issue.reopened`. Use `NIGHTOWL_REOPEN_COOLDOWN_HOURS` (see [Configuration → Issue lifecycle](/agent/configuration#issue-lifecycle)) to require N hours of silence before the auto-reopen fires — useful for flapping issues.
+New channels tick every event. A channel whose `notify_events` is unset also receives every event.
+
+More occurrences of an issue that is already `open` or `ignored` bump its counters without alerting again. This keeps incident storms from flooding every channel, and keeps "ignored" meaningful: ignoring an issue silences all its future occurrences. `resolved` is different: a recurrence is treated as a regression, so the agent flips the status back to `open` and fires `issue.reopened`. Set `NIGHTOWL_REOPEN_COOLDOWN_HOURS` (see [Configuration → Issue lifecycle](/agent/configuration#issue-lifecycle)) to keep an issue resolved when it recurs within that many hours of being resolved. This helps with flapping issues.
 
 ## The four channel types
 
 <CardGroup cols={2}>
-  <Card title="Email (BYOD SMTP)" icon="envelope">
-    Delivered through your own SMTP credentials — SendGrid, Postmark, AWS SES, Mailgun, or a self-hosted MTA. Credentials are encrypted at rest with Laravel's `Crypt` facade.
+  <Card title="Email (BYO SMTP)" icon="envelope">
+    Delivered through your own SMTP server: SendGrid, Postmark, AWS SES, Mailgun, Gmail, or your own relay. See [SMTP setup](/dashboard/smtp-setup).
   </Card>
   <Card title="Slack" icon="slack">
-    Incoming webhook URL from a Slack app. Rich message formatting with issue title, environment, stack-trace excerpt, and a direct link back to the dashboard.
+    Incoming webhook URL from a Slack app. Each alert lists the issue's details and a **View issue** button.
   </Card>
   <Card title="Discord" icon="discord">
-    Channel webhook URL from Discord's **Integrations** settings. Same rich embed as Slack, adapted to Discord's format.
+    Channel webhook URL from Discord's **Integrations** settings. Each alert is an embed with the issue's details, linked to the issue.
   </Card>
   <Card title="Webhook" icon="webhook">
-    Arbitrary HTTPS endpoint. JSON payload, optional HMAC-SHA256 signature in the `X-NightOwl-Signature` header for verification.
+    Any HTTP endpoint. JSON payload, with an optional HMAC-SHA256 signature in the `X-NightOwl-Signature` header.
   </Card>
 </CardGroup>
 
-You can configure any number of channels per app, and any mix of types. Each channel has an independent enabled/disabled toggle.
+You can mix types freely. Each channel has its own enabled/disabled toggle. The Integrations section holds one Slack and one Discord channel per app, and you can add as many email and webhook channels as you need.
 
 ## Email
 
-Email is BYOD — *bring your own deliverability*. NightOwl never sends from a shared pool, which means alerts land in your team's inbox with your domain and your reputation.
+Email is bring-your-own SMTP. NightOwl never sends alerts from a shared pool, so they arrive from your domain with your deliverability.
 
-Required fields: SMTP host, port, username, password, encryption (TLS/SSL/none), from address, from name. The password is encrypted in the database via `Crypt` and decrypted only in-memory when dispatching.
+In the **Email** section, click **Configure SMTP** (or **Add another**). The form asks for host, port, encryption (TLS, SSL or None), from address, and the recipients. Username, password and from name are optional: leave username and password empty for a relay that accepts mail without a login. A password is required whenever a username is set. [SMTP setup](/dashboard/smtp-setup) walks through the common providers.
 
-Recipients must be existing team members of the app — the dashboard rejects addresses that aren't in the team. If you need to notify an external address (an on-call alias, a PagerDuty email trigger, a Slack email relay), add that address as an invited team member first, or route through a Slack/Discord/webhook channel instead.
+Recipients must be members of the app's team. Addresses are matched without regard to case, so `Jane@Example.com` and `jane@example.com` are the same member. To reach an address that isn't a person on the team (an on-call alias, a PagerDuty email trigger), invite it to the team first, or route through a Slack, Discord or webhook channel instead.
+
+Alert emails are HTML. The badge shows the event: **New Issue** for a new exception, **Performance Alert** for a new performance issue, **Reopened** for a reopened one, and **Resolved** or **Ignored** for a status change. Performance alerts show the duration, the threshold and how far over it the record went. A worker saturation alert shows its concurrency numbers instead. The **View issue** button opens the issue in the dashboard.
 
 ## Slack
 
 1. In Slack, create an app at [api.slack.com/apps](https://api.slack.com/apps) → *Incoming Webhooks* → *Add New Webhook to Workspace*.
 2. Copy the webhook URL (starts with `https://hooks.slack.com/services/…`).
-3. Paste into the Slack channel config in the NightOwl dashboard.
+3. In **Settings → Alerts → Integrations**, click **Connect** on the Slack card, paste the URL, pick the events and click **Connect**.
 
-The alert includes issue title, environment badge, first five app-frame stack lines, and a **View in NightOwl** button linking to the issue detail page.
+Each issue alert shows the event and app name, the issue title and message, the issue number, occurrences and users affected, and first and last seen. Exception alerts add handled or unhandled, environment, location, and the Laravel and PHP versions. Performance alerts add the target, the duration, the threshold and how far over it went. A **View issue** button links to the issue.
+
+To change the URL or the events later, click the pencil on the connected card. The URL shows masked there; leave it as it is to keep the current one.
 
 ## Discord
 
 1. In Discord, open **Server Settings → Integrations → Webhooks → New Webhook**, pick the destination channel, and copy the URL.
-2. Paste into the Discord channel config.
+2. Click **Connect** on the Discord card in **Settings → Alerts → Integrations**, paste the URL and pick the events.
 
-Discord supports embeds, so the alert renders with a colored side bar (red for exceptions, amber for performance), title, and fields for environment, count, and first-seen.
+Alerts arrive as an embed coloured by event, with the same details as Slack. The embed title links to the issue. Use the pencil on the connected card to change the URL or events.
 
 ## Webhook
 
-For anything more custom — routing to PagerDuty, OpsGenie, a bespoke router, or your own incident bot — use a webhook channel. Every request is `POST application/json` with this shape:
+For anything more custom (PagerDuty, OpsGenie, your own incident bot), add a webhook channel in **Settings → Alerts → Webhooks** with **Add webhook**: a name, the URL, an optional signing secret, and the events. Every request is `POST` with a JSON body. Issue events have this shape:
 
 ```json
 {
   "event": "issue.new",
   "app": "shop-api",
   "app_id": "2a3b...",
-  "view_url": "https://app.usenightowl.com/dashboard/2a3b.../issues/4812",
+  "view_url": "https://usenightowl.com/dashboard/2a3b.../issues/4812",
   "issue": {
     "issue_id": 4812,
     "type": "exception",
@@ -98,11 +106,33 @@ For anything more custom — routing to PagerDuty, OpsGenie, a bespoke router, o
 
 Every key is always present; unused fields are `null`. Notes:
 
-- `app_id` and `view_url` come from the agent's `NIGHTOWL_APP_ID` env var. When set, both fields embed the connected-app ID and a direct link to the issue page. When unset, `app_id` is `null` and `view_url` falls back to the generic `/dashboard` root. See [agent configuration](/agent/configuration).
-- `message` is truncated to 200 characters with an ellipsis.
-- **Exception events** populate `handled`, `location`, `php_version`, `laravel_version`. **Performance events** populate `route`, `threshold_ms`, `duration_ms`, and use `subtype` to distinguish `route` / `job` / `command` / `query` / etc. The unused set is `null`.
-- `status` and `priority` reflect the row's current dashboard state at dispatch time. For a brand-new fingerprint, `status` is `"open"` (the DB default) and `priority` is `null` until a user assigns one. When a previously-resolved issue recurs, the agent flips `status` back to `"open"` before dispatching `issue.reopened`, so receivers see the new state immediately.
-- Field `type` is always `"exception"` or `"performance"`.
+- For events the agent sends, `app_id` comes from the agent's `NIGHTOWL_APP_ID` and `view_url` is built from `NIGHTOWL_DASHBOARD_URL` (default `https://usenightowl.com`). Without `NIGHTOWL_APP_ID`, `app_id` is `null` and `view_url` points at `/dashboard`. With `NIGHTOWL_DASHBOARD_URL` empty, `view_url` is `null`. See [agent configuration](/agent/configuration).
+- `message` is truncated to 200 characters, followed by `...`.
+- **Exception events** fill `handled`, `location`, `php_version` and `laravel_version`. **Performance events** fill `route`, `threshold_ms` and `duration_ms`, and use `subtype` to say what kind of work it was (`route`, `job`, `command`, `query`, and so on). A worker saturation issue has `subtype` `worker_saturation` and leaves `threshold_ms` and `duration_ms` `null`; its numbers are in `message`.
+- `status` and `priority` are the issue's state when the alert is sent. A new issue is `"open"` with `priority` `null`. When a resolved issue recurs, the agent sets it back to `"open"` before sending `issue.reopened`.
+- `type` is always `"exception"` or `"performance"`.
+
+Agent health events have their own shape:
+
+```json
+{
+  "event": "health.degraded",
+  "app": "shop-api",
+  "app_id": "2a3b...",
+  "view_url": "https://usenightowl.com/dashboard/2a3b.../health",
+  "instance": "web-1:4242",
+  "diagnosis": {
+    "code": "DRAIN_UNREACHABLE",
+    "level": "critical",
+    "message": "The drain cannot connect to PostgreSQL.",
+    "recommendation": "Check that PostgreSQL is running and reachable from the agent (host/port/credentials/network/firewall). Telemetry is buffered and drains automatically once the connection recovers.",
+    "status": "active"
+  },
+  "timestamp": "2026-04-21T12:45:02+00:00"
+}
+```
+
+`health.recovered` carries the same diagnosis with `"status": "resolved"`. `instance` identifies the agent process (host and process id). `view_url` links to the app's Agent Health page, following the same `NIGHTOWL_APP_ID` and `NIGHTOWL_DASHBOARD_URL` rules as above.
 
 ### Signing
 
@@ -112,27 +142,73 @@ If you set a **signing secret** on the channel, NightOwl signs each request with
 X-NightOwl-Signature: <hex-digest>
 ```
 
-The header value is the raw hex digest — **no `sha256=` prefix**. Verify by recomputing the digest with your secret and the raw body (before any JSON parsing), then comparing with `hash_equals`. Reject any request whose signature doesn't match.
+The header value is the raw hex digest, with **no `sha256=` prefix**. Verify by recomputing the digest with your secret and the raw body (before any JSON parsing), then comparing with `hash_equals`. Reject any request whose signature doesn't match.
+
+## Agent health alerts
+
+When a warning or critical health diagnosis becomes active, the agent sends `health.degraded` to every enabled channel that has **Agent health alerts** ticked, and `health.recovered` when it clears. Info-level diagnoses never alert.
+
+- **Email** subjects read `[<app>] Agent Health: <CODE>` and `[<app>] Recovered: <CODE>`. The body shows the app, the agent instance and the diagnosis message, adds the recommendation on a new alert, and ends with a **View agent health** button.
+- **Slack** and **Discord** messages end with a **View agent health** link.
+- The link goes to `{NIGHTOWL_DASHBOARD_URL}/dashboard/{NIGHTOWL_APP_ID}/health`, or to `/dashboard` without `NIGHTOWL_APP_ID`. With `NIGHTOWL_DASHBOARD_URL` empty there is no link.
+
+Alert channels are stored in your monitoring database, so the agent reads them from there. To keep health alerts working while that database is down, the agent saves the channel list to a file next to its buffer: `<NIGHTOWL_AGENT_SQLITE_PATH>.alert-channels.json` (by default `storage/nightowl/agent-buffer.sqlite.alert-channels.json`). It saves the list about 5 seconds after it starts, every 15 minutes after that, and each time it loads the list for a health alert. If the database can't be reached, or doesn't answer the channel query within 5 seconds, it sends to that saved list and logs `Could not read alert channels from the database (...). Using the saved list at <path> (N channels).` The file survives restarts. An agent that has never reached the database, with no file left by an earlier run, has no list to fall back on and logs `... and no saved list exists`.
+
+<Warning>
+  The saved list is plain JSON with the same content as the channel table, SMTP passwords and webhook secrets included. It is written with mode `0600`. When `storage/nightowl/` has no `.gitignore`, `nightowl:agent` writes one that keeps the directory's contents out of git. Keep the directory out of backups you share.
+</Warning>
+
+## Stored secrets and masking
+
+Channel settings, SMTP passwords and webhook secrets included, are stored as plain JSON in the `nightowl_alert_channels` table in your own database. They are stored that way on purpose, because the agent on your server reads them to send alerts. Anyone who can read that table can read them.
+
+The dashboard and `list-alert-channels-tool` never show them back in full. A password or signing secret reads `••••••••`, and a Slack, Discord or webhook URL keeps only its scheme and host (`https://hooks.slack.com/••••••••`). When you edit a channel, leave a masked value as it is to keep the stored one; anything you type replaces it.
+
+A stored SMTP password is kept only while the channel points at the same server. If you change an email channel's host or port, the form clears the password, and when the channel has a username you type the password again before you can save. A masked password sent with a new host or port is refused with `Enter the SMTP password again. The host or port changed.` Changing only the username keeps the stored password. `update-alert-channel-tool` follows the same rule.
 
 ## Testing a channel
 
-Every channel has a **Send test** button. The test payload is deliberately minimal — just enough to prove the transport works — so don't expect it to match the real issue schema:
+There are two ways to test, and they take different paths.
+
+**Send test in the dashboard.** Slack and Discord cards have a **Send test** button (the paper-plane icon), each webhook row has one, and an email channel has **Send Test** on its edit page. The test payload is minimal and doesn't match the real issue schema:
 
 - **Webhook**: `{ "event": "test", "app": "<app name>", "timestamp": "<iso8601>" }`. No `issue` object.
-- **Slack / Discord**: a plain "Test Notification" message in the destination channel.
+- **Slack / Discord**: a "Test Notification" message saying the integration is working.
 - **Email**: a short HTML email with the subject `[<app-name>] NightOwl Test Notification`.
 
-All tests use the same credentials and transport as real alerts, so a successful test guarantees real alerts will reach the same destination. If a test fails, the dashboard surfaces the specific error (SMTP auth failure, 4xx response from a webhook, invalid Slack URL) rather than a generic message.
+A successful test shows a green toast. A failed one shows a red toast with the error, such as an SMTP authentication failure or the endpoint's HTTP error. Each user can send 5 tests a minute and 30 an hour, counted together with `test-alert-channel-tool` over [MCP](/dashboard/mcp-server).
+
+Send test runs on NightOwl's servers, which only connect to public hosts. A private or local SMTP host, or a webhook URL that isn't a public `http(s)` address, is refused there even though the agent could reach it. A passing test proves the credentials and the `From:` address work from NightOwl's side. It does not prove that alerts sent by the agent will arrive, because new-issue, reopened and health alerts leave from your own server.
+
+**`php artisan nightowl:test-alert` on your server.** Run it in the app where the agent is installed. It sends a test alert through every enabled channel using the agent's own email, Slack, Discord and webhook clients, and prints `PASS` or `FAIL` per channel with the error:
+
+```bash
+php artisan nightowl:test-alert
+php artisan nightowl:test-alert --channel="On-call Email"
+```
+
+The test ignores the channel's event selection, and warns when a channel has **New issues** or **Reopened issues** switched off, since that channel won't alert on those in production. If it can't reach your monitoring database, it says so and names the `NIGHTOWL_DB_*` settings to check.
 
 ## Toggling and disabling
 
-Channels can be disabled without deleting. A disabled channel is skipped by the dispatcher but preserves its config and history — useful for silencing a channel during maintenance without losing the webhook URL or SMTP credentials.
+Channels can be disabled without deleting them. A disabled channel is skipped for every event but keeps its settings, so you can silence it during maintenance without losing the webhook URL or SMTP credentials.
+
+Enabling is refused while a channel can't send anything yet, or while it would email someone who isn't on the app's team, with one of these messages:
+
+- `Add a webhook URL before enabling this channel.` (Slack or Discord with no URL)
+- `Add a URL before enabling this webhook.`
+- `Add an SMTP host before enabling this channel.`
+- `Add the SMTP password before enabling this channel.` (a username is set but no password)
+- `Add a recipient before enabling this channel.` (an email channel with no recipients)
+- `All recipient emails must belong to team members. Invalid: ...` (a recipient who isn't a member of the app's team, such as someone who has left it)
+
+This happens with channels created from an [onboarding template](/dashboard/agency#onboarding-templates), which arrive turned off, without their secrets, and with only the email recipients who are on this app's team. A connected Slack or Discord card with no URL says `No webhook URL. Add one to enable this integration.` Add the missing value with the pencil, then turn the channel on. Turning a channel off skips these checks.
 
 ## Under the hood
 
-Issue alerts come from two places:
+Alerts come from two places:
 
-- **`issue.new` and `issue.reopened` (auto-reopen)** — the NightOwl agent's drain worker dispatches directly from the customer app: `issue.new` after a brand-new fingerprint is upserted, `issue.reopened` after a `resolved` fingerprint recurs (subject to `NIGHTOWL_REOPEN_COOLDOWN_HOURS`). No round-trip through NightOwl's API.
-- **`issue.resolved` / `issue.ignored` / `issue.reopened` (manual)** — the NightOwl API dispatches via a queued `DispatchIssueAlertsJob` whenever a user changes status from the dashboard, MCP, or the API. `issue.reopened` therefore has two emission paths (agent auto-reopen and user-initiated reopen), but the payload shape is identical.
+- **The agent on your server** sends `issue.new`, `issue.reopened` when it reopens a resolved issue (subject to `NIGHTOWL_REOPEN_COOLDOWN_HOURS`), and the two health events. It sends them from your host over its own SMTP and HTTP clients, with no round trip through NightOwl's API. A channel the agent fails to send to is logged in the agent's error log.
+- **NightOwl's API** sends `issue.resolved`, `issue.ignored` and a manual `issue.reopened` from a queued job whenever someone changes an issue's status in the dashboard, through MCP or through the API. A bulk action sends one message per issue.
 
-Both paths emit the same payload shape, share `X-NightOwl-Signature` signing, and respect per-channel `notify_events` filtering. Dispatch is isolated per channel with a short timeout — one broken webhook never blocks Slack or email from firing.
+Issue events share the same payload shape and signing on both paths, and both respect each channel's event selection. A new channel is picked up by a running agent within about 30 seconds. Sending is isolated per channel, so one broken webhook never blocks Slack or email from firing.

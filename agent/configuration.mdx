@@ -3,7 +3,15 @@ title: Configuration
 description: Every environment variable and artisan command the NightOwl agent exposes.
 ---
 
-All configuration lives in `config/nightowl.php` after running `php artisan nightowl:install`. Most values are driven by environment variables — the defaults are tuned for a single-instance deployment doing up to a few thousand requests per second.
+All configuration lives in `config/nightowl.php` after running `php artisan nightowl:install`. Most values come from environment variables, and the defaults suit a single agent running on the same host as your app.
+
+<Note>
+  **When changes take effect.** Settings the agent reads (database, drain, health, alerts, retention, ignored routes, searchable log context) apply when you restart `nightowl:agent`. Settings your app reads (`NIGHTOWL_ENABLED`, `NIGHTOWL_INGEST_URI`, `NIGHTOWL_INGEST_TIMEOUT`, `NIGHTOWL_PARALLEL_WITH_NIGHTWATCH` and the capture settings) apply when your app's processes reload their config: reload PHP-FPM or Octane and restart queue workers. `NIGHTOWL_TOKEN` is read by both.
+
+  If you run `php artisan config:cache`, Laravel stops reading `.env` and the environment at runtime. Re-run it after every change. Variables set inline on a command line or in a systemd `Environment=` line are ignored under a cached config; the agent's `--host`, `--port` and `--sqlite-path` options still apply.
+
+  NightOwl attaches to Nightwatch when your app starts booting, and checks its settings again once every service provider has booted, so a value set in a provider's `boot()` still applies. Setting `nightowl.enabled` there turns NightOwl on or off for that process. Turned off, the process runs as if NightOwl had never attached. A change to `nightowl.agent.port`, `nightowl.agent.token`, `nightowl.agent.ingest_uri`, `nightowl.agent.ingest_timeout`, `nightowl.parallel_with_nightwatch`, `nightowl.capture`, `nightwatch.token` or `nightwatch.redact_payload_fields` is applied with the new value.
+</Note>
 
 ## Database connection
 
@@ -14,12 +22,14 @@ All configuration lives in `config/nightowl.php` after running `php artisan nigh
 | `NIGHTOWL_DB_DATABASE` | `nightowl`    | PostgreSQL database name        |
 | `NIGHTOWL_DB_USERNAME` | `nightowl`    | PostgreSQL username             |
 | `NIGHTOWL_DB_PASSWORD` | `nightowl`    | PostgreSQL password             |
-| `NIGHTOWL_DB_SSLMODE`  | `prefer`      | PostgreSQL SSL mode (`disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`) |
+| `NIGHTOWL_DB_SSLMODE`  | `prefer`      | PostgreSQL SSL mode for every agent connection to this database (`disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`). See below |
+
+`NIGHTOWL_DB_SSLMODE` applies to every connection the agent makes to this database: the drain, health alerts, and the artisan commands (`nightowl:install`, `nightowl:migrate`, the migration the agent runs at startup, and the other `nightowl:*` commands), which connect through Laravel's `nightowl` connection. The default, `prefer`, uses TLS when the server offers it, without checking the certificate. When `NIGHTOWL_DB_SSLMODE` isn't set, the drain uses `prefer`. Health alerts and the artisan commands then leave the mode to libpq, which applies a `PGSSLMODE` environment variable if there is one. Set `NIGHTOWL_DB_SSLMODE` to give every connection the same mode.
 
 Use the same credentials you entered when creating the app in the dashboard — the hosted UI uses them to read the telemetry your agent wrote.
 
 <Warning>
-  **Managed Postgres (Supabase, Neon, RDS):** point the agent at the **direct or session connection on port `5432`**, not a transaction-mode pooler (Supabase's `6543`). The agent holds a long-lived drain connection and relies on session-level settings (`synchronous_commit`) that transaction-mode poolers don't preserve, so a session-scoped connection is the right fit. Set `NIGHTOWL_DB_SSLMODE=require`, and use the provider's existing database (`postgres` on Supabase, `neondb` on Neon) — NightOwl creates the tables, not the database.
+  **Managed Postgres (Supabase, Neon, RDS):** point the agent at the **direct or session connection on port `5432`**, not a transaction-mode pooler (Supabase's `6543`). The agent holds one long-lived connection per drain worker, so it needs few connections, and `php artisan nightowl:partition` needs a direct session: behind a transaction-mode pooler it stops with an error. Set `NIGHTOWL_DB_SSLMODE=require`, and use the provider's existing database (`postgres` on Supabase, `neondb` on Neon). NightOwl creates the tables, not the database.
 </Warning>
 
 ### Sharing one database across environments
@@ -48,12 +58,28 @@ If a package upgrade adds a migration and you forget to run `nightowl:migrate`, 
 | `NIGHTOWL_RUN_MIGRATIONS`   | `false`     | Legacy ride-along. When `true`, NightOwl's migrations also run as part of your app's `php artisan migrate` (history tracked in your **primary** database). Off by default because the schema is managed by `nightowl:migrate` / `nightowl:install`, which track history in the NightOwl database. Don't combine the two — they record history in different places and would both try to create the tables. Only enable for a single-database setup where you'd rather not run `nightowl:migrate`. |
 | `NIGHTOWL_AGENT_HOST`       | `127.0.0.1` | TCP host the agent **binds/listens** on (use `0.0.0.0` to accept payloads from other hosts). This is the listener address — not where your app transmits. |
 | `NIGHTOWL_AGENT_PORT`       | `2407`      | TCP port the agent listens on                                              |
-| `NIGHTOWL_INGEST_URI`       | `127.0.0.1:2407` | Where your **app transmits** telemetry — the agent's `host:port` as seen from your app. Defaults to the loopback listener (co-located agent). Set it to the agent's private address when the app and agent run on different hosts — a [dedicated monitoring server](/agent/remote-agent) or a serverless host like [Laravel Vapor](/agent/vapor). A bare host with no port falls back to `NIGHTOWL_AGENT_PORT`. Mirrors nightwatch's `NIGHTWATCH_INGEST_URI`. |
+| `NIGHTOWL_INGEST_URI`       | `127.0.0.1:2407` | Where your **app transmits** telemetry: the agent's `host:port` as seen from your app. Defaults to the loopback listener (co-located agent). Set it to the agent's private address when the app and agent run on different hosts, such as a [dedicated monitoring server](/agent/remote-agent) or a serverless host like [Laravel Vapor](/agent/vapor). A bare host with no port falls back to `NIGHTOWL_AGENT_PORT`. NightOwl never reads Nightwatch's `NIGHTWATCH_INGEST_URI`: if you moved Nightwatch's agent off the app host with it, set this one too. |
 | `NIGHTOWL_INGEST_TIMEOUT`   | `0.5`       | Connect + write timeout (seconds) for transmitting to the agent. The default suits a loopback agent; raise it when the agent is a network hop away (`1.0` on a private network, `3` across the public internet) — otherwise transient latency surfaces as intermittent `Connection timed out` exceptions and dropped batches. |
 | `NIGHTOWL_AGENT_DRIVER`     | `async`     | Server driver (`async` or `sync`). `async` needs `pcntl` + `posix`         |
 | `NIGHTOWL_ENVIRONMENT`      | `APP_ENV`   | Override `APP_ENV` for the `environment` column stamped on every row       |
+| `NIGHTOWL_AGENT_SQLITE_PATH` | `storage/nightowl/agent-buffer.sqlite` | The agent's SQLite buffer. One agent per buffer: a second agent pointed at the same file waits for the first to exit, and refuses to start if it doesn't. The `--sqlite-path` option overrides it, even under a cached config |
+| `NIGHTOWL_BUFFER_LOCK_WAIT` | `30`        | Seconds a starting agent waits for another agent to release its buffer before it refuses to start. Covers restarts and rolling deploys where the old agent is still stopping. `0` refuses at once |
+| `NIGHTOWL_ENABLE_UDP`       | `false`     | Also accept payloads over UDP, which has no acknowledgement               |
+| `NIGHTOWL_UDP_PORT`         | `2408`      | UDP port, used only when `NIGHTOWL_ENABLE_UDP=true`                        |
 
-The async server enables `SO_REUSEPORT` automatically on Linux, so multiple agents can bind the same port without extra configuration — see [Running multiple instances](/agent/multiple-instances).
+The ingest socket always sets `SO_REUSEPORT`, so several agents on one host can share a port. Each one still needs its own buffer and its own health port. See [Multiple instances](/agent/multiple-instances).
+
+## Health API and reporting
+
+| Variable                          | Default                   | Description |
+| --------------------------------- | ------------------------- | ----------- |
+| `NIGHTOWL_HEALTH_ENABLED`         | `true`                    | Serve `GET /status` on the health port. It listens on the same address as the ingest port (`NIGHTOWL_AGENT_HOST`) and has no authentication |
+| `NIGHTOWL_HEALTH_PORT`            | `2409`                    | Health API port. Give each agent on a host its own |
+| `NIGHTOWL_HEALTH_REPORT_ENABLED`  | `true`                    | Send health reports to NightOwl for the Agent Health page. Needs `NIGHTOWL_TOKEN` |
+| `NIGHTOWL_HEALTH_REPORT_INTERVAL` | `30`                      | Seconds between health reports |
+| `NIGHTOWL_DASHBOARD_URL`          | `https://usenightowl.com` | Base of the links in alert emails and messages |
+
+See [Health monitoring](/agent/health-monitoring) for what the reports and `/status` contain.
 
 ## Authentication
 
@@ -69,11 +95,12 @@ For a standalone install, set `NIGHTOWL_TOKEN` only. For parallel mode, set both
 
 | Variable                       | Default     | Description                                                            |
 | ------------------------------ | ----------- | ---------------------------------------------------------------------- |
-| `NIGHTOWL_DRAIN_WORKERS`       | `1`         | Parallel drain worker processes (forked, atomic SQLite row claiming)   |
+| `NIGHTOWL_DRAIN_WORKERS`       | `1`         | Drain worker processes, 1 to 16. A higher value is lowered to 16 with a log line; `0` or a non-number means 1. Each worker holds its own PostgreSQL connection. See [Multiple instances](/agent/multiple-instances#scaling-drain-workers-first) |
 | `NIGHTOWL_DRAIN_BATCH_SIZE`    | `5000`      | Rows per PostgreSQL `COPY` batch                                       |
 | `NIGHTOWL_DRAIN_INTERVAL_MS`   | `100`       | Drain loop sleep interval when the buffer is idle                      |
-| `NIGHTOWL_MAX_PENDING_ROWS`    | `100000`    | Reject new payloads once the buffer hits this depth                    |
+| `NIGHTOWL_MAX_PENDING_ROWS`    | `100000`    | Reject new payloads once more rows than this are waiting, counting rows a drain worker has claimed but not yet written |
 | `NIGHTOWL_MAX_BUFFER_MEMORY`   | `268435456` | RSS ceiling (bytes) before back-pressure kicks in (default 256 MB)     |
+| `NIGHTOWL_DRAIN_WEDGE_WARN_SECONDS` | `180`  | Seconds a drain worker can sit in one database call before the `DRAIN_WEDGED` diagnosis fires. `0` turns it off |
 
 ## Issue lifecycle
 
@@ -83,18 +110,26 @@ For a standalone install, set `NIGHTOWL_TOKEN` only. For parallel mode, set both
 
 See [throughput tuning](/performance/throughput) for how to size these.
 
+## Ignored routes
+
+| Variable                  | Default | Description |
+| ------------------------- | ------- | ----------- |
+| `NIGHTOWL_IGNORE_ROUTES`  | empty   | Comma-separated route patterns, matched on the route's path, name or action. Matching requests and the records they made are never stored; their exceptions and dispatched jobs are kept. Read by the agent, so restart it after a change |
+
+See [Ignoring routes](/agent/filtering-and-context#ignoring-routes) for the pattern rules and what ignoring does to your error rate.
+
 ## Sampling
 
-Sampling is handled upstream by `laravel/nightwatch` before the payload reaches the agent. Configure it in your customer app's `.env`:
+Sampling is a Nightwatch setting, applied in your app before anything reaches the agent. Every rate defaults to `1.0`, which keeps everything:
 
 ```env
-NIGHTWATCH_REQUEST_SAMPLE_RATE=0.1                    # Keep ~10% of HTTP requests (1.0 = keep all)
-NIGHTWATCH_COMMAND_SAMPLE_RATE=1.0                    # Keep all artisan commands
-NIGHTWATCH_EXCEPTION_SAMPLE_RATE=1.0                  # Keep all exceptions
-NIGHTWATCH_SCHEDULED_TASK_SAMPLE_RATE=1.0             # Keep all scheduled tasks
+NIGHTWATCH_REQUEST_SAMPLE_RATE=1.0
+NIGHTWATCH_COMMAND_SAMPLE_RATE=1.0
+NIGHTWATCH_EXCEPTION_SAMPLE_RATE=1.0
+NIGHTWATCH_SCHEDULED_TASK_SAMPLE_RATE=1.0
 ```
 
-The decision is made before transport, so the agent only sees and stores what Nightwatch decided to ship — no double-sampling.
+If your app already sets these for Nightwatch, they keep working. The agent stores what Nightwatch ships and never samples a second time.
 
 See [Filtering and context](/agent/filtering-and-context) for the full recipe.
 
@@ -111,18 +146,18 @@ Both lists are applied inside the customer's PHP process before the record leave
 
 ## Request payloads and response bodies
 
-On its own, Nightwatch records a request's payload only when the response is a 500 (`NIGHTWATCH_CAPTURE_REQUEST_PAYLOAD`), and it never records response bodies. The NightOwl settings below replace that. Set them in your application's `.env`:
+On its own, Nightwatch records a request's payload only when `NIGHTWATCH_CAPTURE_REQUEST_PAYLOAD=true` (it's off by default), and then only for 500 responses. It never records response bodies. The NightOwl settings below replace that. Set them in your application's `.env`:
 
 | Variable                              | Default     | Description                                                                                          |
 | ------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------- |
-| `NIGHTOWL_CAPTURE_REQUEST_PAYLOAD`    | unset       | `true` records the payload of every request. `false` records none. Unset keeps Nightwatch's behaviour (500s only) |
+| `NIGHTOWL_CAPTURE_REQUEST_PAYLOAD`    | unset       | `true` records the payload of every request. `false` records none. Unset leaves it to Nightwatch: nothing, unless `NIGHTWATCH_CAPTURE_REQUEST_PAYLOAD=true`, which records 500s only |
 | `NIGHTOWL_CAPTURE_RESPONSE_BODY`      | `false`     | `true` records response bodies                                                                        |
 | `NIGHTOWL_CAPTURE_STATUS_CODE`        | empty       | Only capture for these statuses, e.g. `422,5xx`. Exact codes and classes (`4xx`) both work. Empty means every status |
 | `NIGHTOWL_CAPTURE_ROUTES`             | empty       | Only capture for these routes, e.g. `api/*,webhooks.*`. Matches the route path, name or action. Empty means every route |
 | `NIGHTOWL_CAPTURE_MAX_BYTES`          | `0`         | Cut each payload and body to this many bytes. `0` means no limit                                      |
 | `NIGHTOWL_REDACT_RESPONSE_FIELDS`     | see below   | Keys to redact in JSON response bodies                                                                |
 
-The status and route filters apply to both payloads and response bodies. Route patterns use the same syntax as `NIGHTOWL_IGNORE_ROUTES`: `*` is the only wildcard, and a leading slash is optional. If a filter is set but none of its entries is valid (a typo such as `errors`), nothing is captured and the agent logs why. A mistake in a filter will never widen capture to every request.
+The status and route filters apply to both payloads and response bodies. Route patterns use the same syntax as `NIGHTOWL_IGNORE_ROUTES`: `*` is the only wildcard, and a leading slash is optional. If a filter is set but none of its entries is valid (a typo such as `errors`), nothing is captured and a warning starting `[NightOwl Agent]` says why. Your app reads these settings, so your app writes that warning, to PHP's error log (for web requests, the web server or PHP-FPM error log), not to the agent's output. A mistake in a filter will never widen capture to every request.
 
 ```env
 # Capture payloads and responses for failing API calls only
@@ -168,6 +203,8 @@ With this on, searching your logs for `8412` finds the line written by
 `Log::error('Payment failed', ['order_id' => 8412])`, not just lines with `8412` in the message.
 
 Restart the agent after changing it.
+
+The search covers context only for a time range that starts at least 24 hours after the point where uncompressed context begins, which allows for clock differences between machines and drain delays. So context search starts working about a day after you turn the setting on. Converting existing logs (below) moves that point back.
 
 The agent only stores context uncompressed once its schema has the column for it (added by `php artisan nightowl:migrate`, which the agent normally runs itself on boot). If the setting is on but the column is missing, the agent keeps storing compressed context, logs a warning saying so, and the dashboard keeps showing the "Narrowed search" note — nothing breaks, it just is not searchable yet. Run the migration and restart.
 
@@ -221,7 +258,7 @@ This second run is quick — your already-converted logs need no conversion, so 
 | ----------------------------------- | ------- | -------------------------------------------------------------- |
 | `NIGHTOWL_PARALLEL_WITH_NIGHTWATCH` | `false` | Fan telemetry out to both Nightwatch and NightOwl simultaneously |
 
-See [Running alongside Nightwatch](/agent/running-alongside-nightwatch).
+In parallel mode NightOwl's copy goes to `NIGHTOWL_INGEST_URI` and Nightwatch's to `NIGHTWATCH_INGEST_URI`; each side reads only its own. See [Running alongside Nightwatch](/agent/running-alongside-nightwatch).
 
 ## Artisan commands
 
@@ -234,7 +271,8 @@ See [Running alongside Nightwatch](/agent/running-alongside-nightwatch).
 | `nightowl:partition`         | Convert existing raw telemetry tables to native daily partitioning — no data copying (except `nightowl_logs`, whose legacy text date column is rewritten); new installs are partitioned automatically |
 | `nightowl:drop-v1-histograms` | Post-transition cleanup: drop the legacy histogram columns once every rollup row carries a DDSketch — refuses to run before that, requires an agent restart after |
 | `nightowl:backfill-log-context` | Convert already-stored log context to the searchable uncompressed form (`--dry-run` to measure first) |
+| `nightowl:backfill-rollups`  | Rebuild the summary (rollup) tables from raw telemetry (`--since`, `--until`, `--type` to narrow it) |
+| `nightowl:test-alert`        | Send a test alert through the agent's own senders to every enabled channel (`--channel=` for one) |
 | `nightowl:clear`             | Truncate all monitoring tables                      |
-| `nightowl:check-thresholds`  | Poll and dispatch threshold-breach notifications    |
 
-The agent command accepts `--driver=async|sync`. `async` is the default and required for multi-worker drain; `sync` is a single-process fallback for hosts without `pcntl`/`posix`.
+The agent command accepts `--driver=async|sync`. `async` is the default and required for multi-worker drain; `sync` is a single-process fallback for hosts without `pcntl`/`posix`, and it sends no health reports. It also accepts `--host`, `--port` and `--sqlite-path`, which override the matching settings and still apply under a cached config.

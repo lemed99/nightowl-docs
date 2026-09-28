@@ -18,16 +18,26 @@ Create your NightOwl account at [usenightowl.com/signup](https://usenightowl.com
   178.156.227.16
   ```
 
-  Add `178.156.227.16/32` to your database's allowlist (RDS security group, Supabase network restrictions, Cloud SQL authorized networks, your firewall's inbound rules). This is one address, not a range — a `/32` covers it. If NightOwl can't reach your database, connecting the app fails with a connection-timeout error.
+  Add `178.156.227.16/32` to your database's allowlist (RDS security group, Supabase network restrictions, Cloud SQL authorized networks, your firewall's inbound rules). This is one address, not a range — a `/32` covers it.
 </Info>
 
+Saving the app doesn't test the connection, so press **Test Connection** in the form first. Until you've done step 4 it answers that the NightOwl tables aren't on this database yet, which is expected and means NightOwl reached it. If NightOwl can't reach your database after the app is saved, the app's pages show "Can't reach your database". See [Test Connection results](/dashboard/test-connection) for what each answer means.
+
 ## 2. Install the agent
+
+<Warning>
+  If your app already runs Nightwatch and you want to keep it running while you try NightOwl, add the [parallel mode](/agent/running-alongside-nightwatch) settings to `.env` **before** you run `composer require`. Once installed, the package takes over Nightwatch's collector.
+</Warning>
 
 Add the NightOwl agent to your Laravel app (it pulls in `laravel/nightwatch` automatically as a dependency):
 
 ```bash
 composer require nightowl/agent
 ```
+
+<Note>
+  The agent needs PHP 8.2 or newer on Laravel 11, 12 or 13, with the `pdo_pgsql` and `pdo_sqlite` extensions (Composer won't install the package without them), `pcntl` and `posix` for the default async driver, and `zlib` for compressed payloads. Your database needs PostgreSQL 14 or newer.
+</Note>
 
 ## 3. Configure environment variables
 
@@ -45,7 +55,7 @@ NIGHTOWL_DB_SSLMODE=prefer
 ```
 
 <Warning>
-  **Use the direct or session connection (port `5432`), not a transaction-mode pooler (Supabase's port `6543`).** The agent runs as a long-lived process that holds its database connection and sets a session-level option (`synchronous_commit`) for drain throughput. A transaction-mode pooler (Supabase Supavisor on `6543`, PgBouncer in transaction mode) hands each transaction a different backend and doesn't keep session state, so it's the wrong fit for the agent's persistent drain connection — use the session pooler or direct connection instead. Managed Postgres also requires SSL, so set `NIGHTOWL_DB_SSLMODE=require`.
+  **Use the direct or session connection (port `5432`), not a transaction-mode pooler (Supabase's port `6543`).** The agent runs as a long-lived process that holds one connection per drain worker, so it needs few connections, and some of its commands need a direct session: `php artisan nightowl:partition` stops with an error behind a transaction-mode pooler (Supabase Supavisor on `6543`, PgBouncer in transaction mode). Use the session pooler or the direct connection instead. Managed Postgres also requires SSL, so set `NIGHTOWL_DB_SSLMODE=require`.
 
   - **Supabase** — use the **Session pooler** (port `5432`, IPv4-reachable) or the Direct connection from *Database → Connect*; database `postgres`.
   - **Neon** — the standard endpoint host on port `5432` (avoid the `-pooler` host variant for the agent); database `neondb`.
@@ -57,6 +67,10 @@ NIGHTOWL_DB_SSLMODE=prefer
   `NIGHTOWL_APP_ID` is the connected-app ID, shown alongside the token after you create the app. The agent embeds it in alert payloads so the **View issue** link in emails and webhooks points directly at the issue page. Without it, links fall back to the generic dashboard root.
 
   If you're running NightOwl [alongside Nightwatch's hosted agent](/agent/running-alongside-nightwatch), you'll also set `NIGHTWATCH_TOKEN` — that's your real Nightwatch token, used by the Nightwatch SDK to reach Laravel Cloud's hosted ingest in parallel.
+
+  `NIGHTOWL_DB_SSLMODE` applies to every connection the agent makes to this database, including `nightowl:install` and `nightowl:migrate`. The default, `prefer`, uses TLS whenever the server offers it. See [Configuration](/agent/configuration#database-connection).
+
+  If you cache configuration (`php artisan config:cache`), run it again after editing `.env`. A cached config doesn't read `.env`.
 
   Besides its own health, the agent sends an hourly sample of operational statistics about the NightOwl tables in your database (row counts, sizes, scan and vacuum counters, server settings — read from PostgreSQL's catalog views, never the contents of your telemetry). This is what lets NightOwl support diagnose problems without ever asking you to run queries on your database. It's covered in the [Privacy Policy](https://usenightowl.com/privacy), and `NIGHTOWL_TABLE_STATS=false` turns it off.
 </Note>
@@ -70,7 +84,7 @@ php artisan nightowl:install
 This publishes `config/nightowl.php` and runs the migrations that create the `nightowl_*` tables in the PostgreSQL database you configured in step 3. It also runs a fork-safety probe to confirm the agent's SQLite + `pcntl_fork` buffer will work on your host.
 
 <Note>
-  The `nightowl_*` tables live in the BYO PostgreSQL database you configured above — not your app's primary database. Migration history is tracked there too, so `nightowl:install` (and `php artisan nightowl:migrate`) are idempotent: safe to run on every environment and every deploy, even when several environments share one NightOwl database. See [Sharing one database across environments](/agent/configuration#sharing-one-database-across-environments).
+  The `nightowl_*` tables live in the PostgreSQL database you set with `NIGHTOWL_DB_*` above. That can be a database of its own or, if your app already runs on PostgreSQL, the same one your app uses: every NightOwl table starts with `nightowl_`. Migration history is tracked there too, so `nightowl:install` (and `php artisan nightowl:migrate`) are idempotent: safe to run on every environment and every deploy, even when several environments share one NightOwl database. See [Sharing one database across environments](/agent/configuration#sharing-one-database-across-environments).
 </Note>
 
 ## 5. Route your logs to NightOwl
@@ -104,7 +118,7 @@ If your app overrides the `stack` channel in `config/logging.php` directly, add 
 php artisan nightowl:agent
 ```
 
-The agent starts on port 2407 by default. Nightwatch will automatically send telemetry to it.
+The agent starts on port 2407 by default, and the Nightwatch SDK in your app sends telemetry to it. Restart your queue workers (and Octane, if you use it) so those long-running processes load the package too. In production, run the agent under a supervisor: see [Production deployment](/agent/production-deployment).
 
 <Warning>
   Port 2407 is also **Nightwatch's default ingest port**. If you're already running the Nightwatch agent (`nightwatch:agent`), the two will collide and the NightOwl agent won't start. To run both side by side, set `NIGHTOWL_AGENT_PORT` to a free port and enable parallel mode — see [Running Alongside Nightwatch](/agent/running-alongside-nightwatch).

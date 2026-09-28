@@ -1,34 +1,43 @@
 ---
 title: Agent Throughput
-description: Performance characteristics of the NightOwl agent.
+description: Performance characteristics of the NightOwl agent, and what was measured.
 ---
 
-The NightOwl agent is built for throughput. A single instance handles **13,000+ payloads per second** using PostgreSQL COPY protocol, SQLite WAL buffering, and batch draining.
+The agent does two jobs at different speeds: it accepts payloads from your app (ingest) and writes them to PostgreSQL (drain). Ingest is the faster of the two, so the drain rate is the number to plan around.
 
 ## How it works
 
-1. **Ingest**: The agent receives telemetry over TCP using ReactPHP. Payloads are parsed and written to a local SQLite WAL buffer.
-2. **Drain**: A background worker reads batches of 5,000 rows from the buffer and writes them to PostgreSQL using the COPY protocol (10x faster than INSERT).
-3. **Back-pressure**: When the SQLite buffer exceeds 100,000 pending rows, the agent gracefully rejects new payloads. Your app is never blocked.
+1. **Ingest.** The agent receives telemetry over TCP using ReactPHP. Each payload is written to a local SQLite buffer as soon as it's accepted.
+2. **Drain.** Drain workers read batches of up to 5,000 rows from the buffer and write them to PostgreSQL, mostly with the COPY protocol.
+3. **Back-pressure.** When more than 100,000 rows are waiting (`NIGHTOWL_MAX_PENDING_ROWS`), or the agent's memory passes `NIGHTOWL_MAX_BUFFER_MEMORY` (256 MB by default), the agent rejects new payloads. The SDK in your app drops that batch and the request carries on.
 
 ## Key optimizations
 
-- **SQLite WAL mode** — concurrent reads and writes without locking
-- **PostgreSQL COPY protocol** — bulk loading for 10 of 12 tables (exceptions and users use INSERT for upsert)
-- **`synchronous_commit = off`** — 2-5x write throughput boost on PostgreSQL connections
-- **Batch size of 5,000** — configurable via `NIGHTOWL_DRAIN_BATCH_SIZE`
+- **SQLite in WAL mode.** Ingest keeps writing to the buffer while drain workers read from it.
+- **PostgreSQL COPY.** Bulk loading for 10 of the 12 tables. Exceptions and users use `INSERT` because they're upserts.
+- **`synchronous_commit = off`**, set for each drain transaction only (`SET LOCAL`), so it never affects other clients of your database.
+- **Batch size of 5,000**, configurable with `NIGHTOWL_DRAIN_BATCH_SIZE`.
+- **Several drain workers**, configurable with `NIGHTOWL_DRAIN_WORKERS` (1 to 16). See [Multiple instances](/agent/multiple-instances#scaling-drain-workers-first).
 
 ## Benchmarks
 
-On a single instance (M1 Mac, PostgreSQL via Docker):
+Two measurements, on a single instance.
+
+**Ingest benchmark (M1 Mac, PostgreSQL in Docker).** The agent accepted **13,400 payloads/s**. This measures how fast it accepts and buffers payloads, not how fast it writes them to PostgreSQL.
+
+**Load test, July 2026.** A real Laravel app and a real PostgreSQL database on a 10-core macOS machine, with the load generator on the same machine, default settings and one drain worker. Each payload carried about 7.7 records.
 
 | Metric | Value |
 |---|---|
-| Ingest throughput | 13,400 payloads/s |
-| Drain throughput | Keeps pace with ingest |
+| Ingest, peak | about 9,200 payloads/s (about 71,000 records/s) |
+| Drain, sustained | about 2,500 payloads/s (about 19,000 records/s) |
+| Drain, peak | about 5,000 payloads/s |
 | Back-pressure threshold | 100,000 pending rows |
-| Memory usage | ~200-400MB |
+
+Ingest outran the drain by two to almost four times, so the buffer grew until back-pressure started. From then on the agent rejected new payloads and kept running, and its health status moved from healthy to degraded to critical.
+
+That test ran with one drain worker: up to agent 2.4.7, `NIGHTOWL_DRAIN_WORKERS` had no effect. We haven't published a measurement with more workers yet.
 
 <Note>
-  Actual throughput depends on your hardware, PostgreSQL instance, and network latency. The agent's built-in health dashboard shows real-time performance metrics.
+  Actual throughput depends on your hardware, your PostgreSQL server and the network between them. Agent Health in the dashboard (Team and Agency plans) and the agent's local `/status` endpoint show your own ingest and drain rates. See [Health monitoring](/agent/health-monitoring).
 </Note>
