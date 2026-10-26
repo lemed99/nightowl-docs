@@ -9,6 +9,39 @@ What's new in NightOwl. Each entry covers the agent package, the backend API, an
   Entries tagged **Agent** ship as a Composer package, so you pick up those changes by running `composer update nightowl/agent`. Some agent releases need a follow-up command (a migration or a new env var). Each Agent entry below links to the [agent changelog](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md), which lists the exact upgrade steps per version. API and dashboard changes are deployed for you on the hosted platform.
 </Note>
 
+<Update label="October 26, 2026" tags={["Agent", "Dashboard"]}>
+  **A corrupt buffer file no longer stops the agent**
+
+  The agent keeps telemetry in a local SQLite file until it reaches your database. If that file was damaged, the agent stopped draining for good, and your Agent Health page pointed you at PostgreSQL, which was fine. A restart didn't help either: the agent refused to start and told you to delete the file. The agent now checks the file itself. When only an index is damaged it rebuilds it and nothing is lost. Otherwise it keeps the damaged file as `agent-buffer.sqlite.corrupt-<time>` and starts a fresh one, so new telemetry keeps arriving; payloads still in the old file are not drained, and the new `BUFFER_REPAIRED` diagnosis tells you how many. This also works when the file is already damaged at startup.
+
+  The agent now also guards against a bug in SQLite itself (in the version Ubuntu 22.04 and 24.04 ship) that we believe caused this damage, when two of the agent's processes wrote to the file at the same moment.
+
+  When the agent can't write to its buffer for any reason (a full disk, a file owned by another user, a disk error), the new `BUFFER_UNWRITABLE` diagnosis names the cause, and the "drain stopped" warnings that sent you to PostgreSQL stay quiet. See [Health monitoring](/agent/health-monitoring#diagnoses-youre-most-likely-to-see).
+
+  **CPU warnings no longer fire on a short burst**
+
+  `CPU_HIGH` and `CPU_SATURATION` looked at a single 10-second sample, so a scheduled job spiking the CPU for a few seconds could raise a critical warning advising a bigger server on a host that was mostly idle. Both now use the average over the last 60 seconds, and the message gives the average and the peak. `NIGHTOWL_CPU_HIGH_PCT`, `NIGHTOWL_CPU_CRITICAL_PCT` and `NIGHTOWL_CPU_SUSTAIN_SECONDS` let you change the thresholds and the window. See [Configuration](/agent/configuration).
+
+  **Health alerts reach you while your database is down**
+
+  Your alert channels are stored in the database the agent writes to, so when that database went down, the alert telling you so had nowhere to go. The agent now keeps a copy of the channel list next to its buffer and uses it during an outage. Health alert emails also have a **View agent health** button, and the Agent Health page opens while your database is unreachable.
+
+  **`NIGHTOWL_DRAIN_WORKERS` now works**
+
+  The setting was never applied, so every agent ran a single drain worker whatever you set. If you raised it, the agent will now actually start that many (up to 16) after you upgrade. A second agent started on the same buffer, during a rolling deploy for example, waits up to 30 seconds for the first to exit instead of running alongside it.
+
+  **Smaller fixes**
+
+  - An SMTP channel can be saved without a username and password, for relays that don't use authentication.
+  - Slack, Discord and webhook URLs are shown masked, and a connected Slack or Discord channel can have its URL edited.
+  - A reopened issue's email says "Reopened".
+  - Cache write, write-failure and delete-failure counts are no longer always 0.
+  - An outgoing-request threshold saved with `https://` in front of the host now matches.
+  - Logs, queries, cache calls and outgoing HTTP requests made while your app boots are now recorded.
+
+  **Upgrading the agent:** run `composer update nightowl/agent` and restart the agent. No migration is needed. See the [agent changelog (2.4.8)](https://github.com/lemed99/nightowl-agent/blob/main/CHANGELOG.md#248---2026-10-26) for details.
+</Update>
+
 <Update label="September 23, 2026" tags={["Dashboard", "API"]}>
   **Reading a captured payload or response, and seeing what ran a query**
 
