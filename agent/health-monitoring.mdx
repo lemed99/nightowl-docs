@@ -44,13 +44,14 @@ Every diagnosis on the page carries its own recommendation. These are the common
 | `DRAIN_WRITE_FAILING` | critical | PostgreSQL is reachable but rejects the writes, for example a missing table or a missing grant. The message names the SQLSTATE and the table. |
 | `DRAIN_STOPPED` | critical | Nothing is draining while more than 100 rows wait, and no other diagnosis explains why. |
 | `DRAIN_WEDGED` | critical | A drain worker has been stuck inside one database call for longer than `NIGHTOWL_DRAIN_WEDGE_WARN_SECONDS` (180 by default). |
+| `BUFFER_UNWRITABLE` | warning / critical | The agent can't write to its own buffer file on your server (`storage/nightowl/agent-buffer.sqlite` by default). PostgreSQL isn't involved. The message names the SQLite error, and the recommendation is specific to it: a full disk, a file owned by another user, a disk error, a corrupt file, or a lock held by another program. It's a warning when more than 2% of the last minute's payloads were refused and critical above 10%, or when the drain can't use the buffer at all. It clears once the buffer has accepted payloads for about 15 seconds without refusing one (longer when refusals were rare). Refused payloads are lost. |
 | `DRAIN_FALLING_BEHIND` | warning | Ingest is more than 1.5 times the drain rate, with over 5,000 rows waiting. |
 | `BACKLOG_HIGH` / `BACKLOG_CRITICAL` | warning / critical | Pending rows pass 50% / 80% of `NIGHTOWL_MAX_PENDING_ROWS`. |
 | `BACK_PRESSURE_ACTIVE` | critical | The agent is rejecting payloads because the buffer or its memory limit is full. |
 | `PG_LATENCY_HIGH` / `PG_LATENCY_CRITICAL` | warning / critical | PostgreSQL write latency is above 500 ms / 2 seconds. |
-| `REJECT_RATE_HIGH` / `REJECT_RATE_CRITICAL` | warning / critical | More than 2% / 10% of incoming payloads are rejected. |
+| `REJECT_RATE_HIGH` / `REJECT_RATE_CRITICAL` | warning / critical | More than 2% / 10% of incoming payloads are rejected. Payloads the buffer refused count in the reported reject numbers but not here: `BUFFER_UNWRITABLE` covers them. |
 | `MEMORY_HIGH` | warning | The agent uses more than 70% of `NIGHTOWL_MAX_BUFFER_MEMORY`. |
-| `CPU_HIGH` / `CPU_SATURATION` | warning / critical | Host CPU is above 70% / 90%. |
+| `CPU_HIGH` / `CPU_SATURATION` | warning / critical | Host CPU averaged above 70% / 90% over the last 60 seconds, so nothing shows for the first minute after a restart. The message gives the average and the peak. Set the thresholds and the window with `NIGHTOWL_CPU_HIGH_PCT`, `NIGHTOWL_CPU_CRITICAL_PCT` and `NIGHTOWL_CPU_SUSTAIN_SECONDS`. |
 | `SYSTEM_MEMORY_HIGH` / `SYSTEM_MEMORY_CRITICAL` | warning / critical | Host memory is more than 75% / 90% used. |
 | `ROLLUP_STALE` | critical | A summary table behind the wide-range charts has stopped being written while its raw telemetry keeps arriving. |
 | `ROLLUP_BACKFILL_PENDING` | info, then warning | The summary rebuild an upgrade owes hasn't finished. It turns into a warning after 6 hours. |

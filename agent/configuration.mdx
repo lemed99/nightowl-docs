@@ -78,6 +78,9 @@ The ingest socket always sets `SO_REUSEPORT`, so several agents on one host can 
 | `NIGHTOWL_HEALTH_REPORT_ENABLED`  | `true`                    | Send health reports to NightOwl for the Agent Health page. Needs `NIGHTOWL_TOKEN` |
 | `NIGHTOWL_HEALTH_REPORT_INTERVAL` | `30`                      | Seconds between health reports |
 | `NIGHTOWL_DASHBOARD_URL`          | `https://usenightowl.com` | Base of the links in alert emails and messages |
+| `NIGHTOWL_CPU_HIGH_PCT`           | `70`                      | Host CPU percentage, averaged over `NIGHTOWL_CPU_SUSTAIN_SECONDS`, above which `CPU_HIGH` (warning) fires |
+| `NIGHTOWL_CPU_CRITICAL_PCT`       | `90`                      | Same, for `CPU_SATURATION` (critical). A value below `NIGHTOWL_CPU_HIGH_PCT` is raised to it |
+| `NIGHTOWL_CPU_SUSTAIN_SECONDS`    | `60`                      | Seconds the CPU average is taken over, so a short burst such as the scheduler at the top of the hour doesn't alert. Rounded up to 10-second steps, at most `600`. `0` judges each 10-second sample on its own, and the message then gives that one value |
 
 See [Health monitoring](/agent/health-monitoring) for what the reports and `/status` contain.
 
